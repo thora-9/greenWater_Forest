@@ -38,6 +38,7 @@ per_na = function(x){
   return(out)
 }
 
+
 ##############################    
 ####Load World Regions
 wb_regions = 
@@ -73,29 +74,32 @@ fishnet.r =
 
 #Forest Management Data 
 FM_source = 
-  rast(paste0(database, "Forestry/forest_managemen_lesiv_2021/FML_v3-2_with-colorbar.tif"))
+  rast(paste0(database, "Forestry/forest_managemen_lesiv_2021/FML_v3-2_with-colorbar.tif")) 
 
 terra::terraOptions(progress = 1, todisk = TRUE)
 
 #Create an aggregated layer using modal (basic implementation)
-#fm_4x = terra::aggregate(FM_source, cores = 16, fact = 4, fun = 'modal', na.rm = T)
+#fm_4x = terra::aggregate(FM_source, cores = 16, fact = 4, fun = 'modal')
 #writeRaster(fm_4x, paste0(database, "Forestry/forest_managemen_lesiv_2021/FML_v3_2_4x.tif"), overwrite = TRUE)
 
 #Load the saved 4x version
 fm_4x = rast(paste0(database, "Forestry/forest_managemen_lesiv_2021/FML_v3_2_4x.tif"))
+fm_8x = terra::aggregate(fm_4x, cores = 16, fact = 2, fun = 'modal', na.rm = T)
 
+NAflag(fm_8x)<-128
+
+
+##############################
+#Approach-1: Mode
 fm_256x = terra::aggregate(fm_4x, cores = 8, fact = 64, fun = 'modal', na.rm = T)
 
-#fm_512x = terra::aggregate(fm_256x, cores = 16, fact = 2, fun = 'modal')
-
-#Create a fake flag for NA values
+##Get the aggregation based on mode
 data_fishnet = 
-  terra::resample(fm_256x, fishnet.r, method = 'mode') %>%
+  terra::resample(fm_256x, fishnet.r, method = 'near') %>%
   mask(fishnet.r)
 
 data_fishnet = ifel(data_fishnet==128, NA, data_fishnet)
 
-##############################
 #Create a lookup table linking codes to classes
 fm_classes = data.frame(FM_class_code = c(11, 20, 31, 32, 40, 53),
                         FM_class = c("Naturally regenerating forest; no management",
@@ -106,12 +110,59 @@ fm_classes = data.frame(FM_class_code = c(11, 20, 31, 32, 40, 53),
                                      "Agroforestry"))
 
 #Convert to dataframe
-out.df = 
+out.df1 = 
   as.data.frame(data_fishnet, xy = T) %>%
   dplyr::rename(FM_class_code = `FML_v3-2_with-colorbar`) %>%
   merge(fm_classes, by = "FM_class_code", all.x = T) %>%
   dplyr::select(2,3,1,4) %>%
   as.data.table()
+
+##############################
+#Approach 2: Get the percent of each class
+
+total_cells_05deg = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){length(x)}) %>%
+  terra::resample(fishnet.r, method = 'near') 
+
+# total_cells_05deg = 
+#   ifel(fm_4x==128, NA, fm_4x) %>%
+#   terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(!is.na(x))}) %>%
+#   terra::resample(fishnet.r, method = 'near') 
+
+natural_05deg = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(x == 11, na.rm = T)}) %>%
+  terra::resample(fishnet.r, method = 'near') 
+  
+natural_managed_05deg = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(x == 20, na.rm = T)}) %>%
+  terra::resample(fishnet.r, method = 'near')
+
+natural_all_05deg = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(x %in% c(11, 20), na.rm = T)}) %>%
+  terra::resample(fishnet.r, method = 'near') 
+
+planted_512x = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(x %in% c(31, 32, 40), na.rm = T)}) %>%
+  terra::resample(fishnet.r, method = 'near') 
+
+agroforestry_512x = 
+  terra::aggregate(fm_4x, cores = 8, fact = 128, fun=function(x){sum(x == 53, na.rm = T)}) %>%
+  terra::resample(fishnet.r, method = 'near') 
+
+all_512 = 
+  c(natural_05deg/total_cells_05deg, natural_managed_05deg/total_cells_05deg, natural_all_05deg/total_cells_05deg,
+    planted_512x/total_cells_05deg, agroforestry_512x/total_cells_05deg)
+
+names(all_512) = c("natural_only", "natural_managed", "natural_all", "planted", "agroforestry")
+
+#Convert to dataframe
+out.df = 
+  as.data.frame(all_512, xy = T) %>%
+  as.data.table() %>%
+  mutate(across(natural_only:agroforestry, ~ round(.x, 2))) %>%
+  mutate(score = rowSums(across(natural_only:agroforestry))) %>%
+  filter(score != 0) %>%
+  dplyr::select(-score)
 
 ##############################    
 #Check with existing dataframe to see if cells exist/coverage
@@ -131,6 +182,6 @@ test2 = merge(out.df, test[, 1:4], by.x = c('x', 'y'), by.y = c('longitude', 'la
 ##############################
 #Write Output
 ##############################
-fwrite(out.df, paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05.csv"))
+fwrite(out.df, paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05_proportions.csv"))
 
-writeRaster(fm_05deg, paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05.tif"), overwrite = TRUE)
+writeRaster(all_512, paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05_prop.tif"), overwrite = TRUE)
