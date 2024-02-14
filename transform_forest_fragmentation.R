@@ -66,15 +66,31 @@ data_in2 =
 data_in = c(data_in1, data_in2)
 
 #Align and resample the data
-data_fishnet = 
-  terra::project(data_in, fishnet.r, method = 'bilinear') #Use bilinear as the variable is continuous
+data_fishnet1 = 
+  terra::project(data_in, crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(fishnet.r, method = 'bilinear')
+
+data_fishnet2 = 
+  terra::project(data_in, crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(fishnet.r, method = 'med') 
 
 #Convert to dataframe
-out.df = 
-  as.data.frame(data_fishnet, xy = T) %>%
+out.df1 = 
+  as.data.frame(data_fishnet1, xy = T) %>%
   mutate(FFI2000 = round(FFI2000, 2),
          FFI2020 = round(FFI2020, 2)) %>%
+  dplyr::rename(FFI2000_bil = FFI2000, FFI2020_bil = FFI2020) %>%
   as.data.table()
+
+out.df2 = 
+  as.data.frame(data_fishnet2, xy = T) %>%
+  mutate(FFI2000 = round(FFI2000, 2),
+         FFI2020 = round(FFI2020, 2)) %>%
+  dplyr::rename(FFI2000_med = FFI2000, FFI2020_med = FFI2020) %>%
+  as.data.table()
+
+out.df = 
+  merge(out.df2, out.df1, by = c('x', 'y'), all.x = T)
 
 ##############################    
 #Check with existing dataframe to see if cells exist/coverage
@@ -86,9 +102,14 @@ sum(out.df$x %in% test$longitude) == nrow(out.df)
 #Y coordinates
 sum(out.df$y %in% test$latitude) == nrow(out.df)
 
+test2 = merge(out.df, test[, 1:4], by.x = c('x', 'y'), by.y = c('longitude', 'latitude'), all.x = T)
+
+#Get the percent of cells missing 
+100*sum(is.na(test2$objectid))/nrow(out.df)
+
 ##############################
 #Write Output
 ##############################
-fwrite(out.df, paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_05.csv"))
+fwrite(out.df, paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_05_v2.csv"))
 
 
