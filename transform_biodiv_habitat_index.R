@@ -112,6 +112,6 @@ test2 = merge(out.df, fishnet[, 1:4], by.x = c('x', 'y'), by.y = c('Lon', 'Lat')
 ##############################
 #Write Output
 ##############################
-fwrite(out.df, paste0(database, "Biodiversity/Habitat/bio_habitat_index_Harwood_2022/processed/BII_prop_species_05deg.csv"))
+fwrite(out.df, paste0(database, "Biodiversity/Habitat/bio_habitat_index_Harwood_2022/processed/BHI_prop_species_05deg.csv"))
 
 
