@@ -137,8 +137,8 @@ for(i in 1:nrow(data_sub_DT)){
 }
 
 
-fwrite(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.csv'))
-saveRDS(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.rds'))
+#fwrite(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.csv'))
+#saveRDS(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.rds'))
 
 #Tests
 
