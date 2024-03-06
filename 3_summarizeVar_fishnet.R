@@ -92,7 +92,7 @@ rm(data_in1)
 ##############################
 #Load the upstream-HYBAS summarized linkage
 upstream_summarized_HYBAS = 
-  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_set2_SA.rds')) %>%
+  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_SA_w200km.rds')) %>%
   mutate(across(natural_only:total_cells, ~ .x/total_cells))
 
 #Load the upstream-HYBAS linkage
@@ -194,8 +194,8 @@ out_fish_df_v2 =
   st_drop_geometry() %>%
   as.data.table()
 
-fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_SA_allWS_240304.csv'))
-fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_SA_top5up_240304.csv'))
+fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_SA_allWS_w200km_240304.csv'))
+fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_SA_top5up_w200km_240304.csv'))
 
 
 
