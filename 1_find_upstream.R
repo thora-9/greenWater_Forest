@@ -20,7 +20,7 @@ library(stars)
 library(tidyterra)
 library(modelr)
 library(haven)
-
+library(pbapply)
 
 #paths
 machine = 'local'
@@ -88,7 +88,7 @@ data_sub =
 #To free memory
 rm(data_in1)
 
-
+########################################################
 #Run the algorithm to get the upstream
 i = 2
 upstream_out = NULL
@@ -140,6 +140,7 @@ for(i in 1:nrow(data_sub_DT)){
 #fwrite(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.csv'))
 #saveRDS(out_df, paste0(proj_dir, 'Upstream/upstream_codes_SA.rds'))
 
+########################################################
 #Tests
 
 #Get the size of upstream watersheds for each watershed
@@ -175,3 +176,86 @@ sum(test_upstream$gdp_ud_ssu)/test_current$gdp_ud_usu
 #
 sum(test_upstream$pop_ct_ssu)/test_current$pop_ct_usu
 
+########################################################
+########################################################
+#Get the distance between pairs of watersheds
+
+#Load the upstream-HYBAS linkage
+#This was calculated in step 1 of the workflow
+upstream_HYBAS = 
+  readRDS(paste0(proj_dir, 'Upstream/upstream_codes_SA.rds')) 
+
+
+#Find the centroid of each HYBAS polygon
+data_sub_centroid = 
+  data_sub %>% 
+  st_make_valid() %>%
+  st_centroid(data_sub)
+
+#Split the df by HYBAS_ID
+upstream_HYBAS_list =
+  split(upstream_HYBAS, by = 'HYBAS_ID') 
+
+#Sort the list of dataframes to ensure consistency later on
+upstream_HYBAS_list <- lapply(upstream_HYBAS_list, function(df){
+  df[order(df$upstream_chain),]
+})
+
+#upstream_HYBAS_list_sub = upstream_HYBAS_list[1:10000]
+
+#Function to get the centroid distances
+getdist = function(df) {
+  ws_1_shp = 
+    data_sub_centroid %>% 
+    filter(HYBAS_ID %in% df$HYBAS_ID) %>%
+    arrange(HYBAS_ID)
+  
+  ws_2_shp = 
+    data_sub_centroid %>% 
+    filter(HYBAS_ID %in% df$upstream_chain) %>%
+    arrange(HYBAS_ID)
+  
+  getdist = 
+    round(sf::st_distance(ws_1_shp, ws_2_shp)/1000, 2)
+  
+  getdist
+  
+}
+
+
+#Run the process in parallel
+start = Sys.time()
+out_list <- parallel::mclapply(upstream_HYBAS_list, getdist, mc.cores = 4)
+end = Sys.time()
+
+end - start
+
+#Merge the lists
+out_list_merged = rbindlist(upstream_HYBAS_list)
+
+out_list_merged$distance = unlist(out_list, use.names = F)
+
+
+#fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_SA_wdist.csv'))
+#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_SA_wdis.rds'))
+
+
+
+
+# test3 = 
+#   upstream_HYBAS %>%
+#   filter(HYBAS_ID == 6120000200) 
+
+test3a = 
+  data_sub_centroid %>% 
+  filter(HYBAS_ID == 6120007000) 
+
+test3c = 
+  data_sub_centroid %>% 
+  filter(HYBAS_ID == 6121101680) 
+
+# test3b = 
+#   data_sub_centroid %>% 
+#   filter(HYBAS_ID %in% test3$upstream_chain) 
+
+st_distance(test3a, test3c)

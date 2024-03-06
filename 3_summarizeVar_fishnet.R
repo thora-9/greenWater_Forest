@@ -91,7 +91,13 @@ rm(data_in1)
 
 ##############################
 #Load the upstream-HYBAS summarized linkage
-upstream_summarized_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_1_SA.rds'))
+upstream_summarized_HYBAS = 
+  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_set2_SA.rds')) %>%
+  mutate(across(natural_only:total_cells, ~ .x/total_cells))
+
+#Load the upstream-HYBAS linkage
+#This was calculated in step 1 of the workflow
+upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_SA.rds'))
 
 #Find the centroid of each HYBAS polygon
 data_sub_centroid = 
@@ -115,44 +121,87 @@ data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
 
 #Create a list of variables to summarize
-all_variables = c("FFI2000", "FFI2020")
+var_mean = c("FFI2000", "FFI2020", "BHI_2010", "BHI_2020")
+var_mode = c("FM_class_mode")
+var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agroforestry")
+
+#Aggregation method 1 - Take the median/mean of all watersheds within grid cell
 
 #Subset the variables, merge the fishnet id, summarize after grouping by fishnet id
-data_in_summarized = 
+data_in_summarized_v1 = 
   upstream_summarized_HYBAS %>%
-  dplyr::select(1, all_of(all_variables)) %>%
-  mutate(across(all_of(all_variables), ~ ifelse(.x == -999, NA, .x))) %>%
+  #dplyr::select(1, all_of(all_variables)) %>%
+  mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
   merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
-  merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
+  #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
+  arrange(desc(upstream_total)) %>% 
   group_by(Id) %>%
-  summarise(across(all_variables, ~ mean(.x, na.rm = TRUE)),
-            count = mean(count, na.rm = T)) %>% 
+  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
+            across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
+            across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
   as.data.table()
 
+#Aggregation method 2 - aggregate using the value of n watersheds with the greatest upstream extent
+
+#Subset the variables, merge the fishnet id, summarize after grouping by fishnet id
+data_in_summarized_v2 = 
+  upstream_summarized_HYBAS %>%
+  #dplyr::select(1, all_of(all_variables)) %>%
+  mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
+  merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
+  #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
+  arrange(desc(upstream_total)) %>% 
+  group_by(Id) %>%
+  slice(1:5) %>%
+  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
+            across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
+            across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
+  as.data.table()
+
+#############################
 #Merge the summarized dataset back to the fishnet to produce final output
-out_fish = 
+out_fish_v1 = 
   fishnet %>%
   dplyr::select(Id, Lat, Lon) %>%
-  merge(data_in_summarized, by = 'Id', all.x = T) %>%
-  drop_na()
+  merge(data_in_summarized_v1, by = 'Id', all.x = T) %>%
+  filter(!is.na(BHI_2010))
 
+out_fish_v2 = 
+  fishnet %>%
+  dplyr::select(Id, Lat, Lon) %>%
+  merge(data_in_summarized_v2, by = 'Id', all.x = T) %>%
+  filter(!is.na(BHI_2010))
+
+#############################
+#Tests: Create rasters and visualize output
 out_fish_r = 
-  fasterize(out_fish, fishnet.r %>% raster, field = "FFI2000") %>%
-  crop(out_fish)
+  fasterize(out_fish_v1, fishnet.r %>% raster, field = "natural_only") %>%
+  crop(data_sub)
 
-out_fish_r2 = 
-  fasterize(out_fish, fishnet.r %>% raster, field = "count") %>%
-  crop(out_fish)
+out_fish_r2 =
+  fasterize(out_fish_v2, fishnet.r %>% raster, field = "natural_only") %>%
+  crop(data_sub)
 
-out_fish_df = 
-  out_fish %>% 
+#############################
+#Create the final DF for export
+out_fish_df_v1 = 
+  out_fish_v1 %>% 
   st_drop_geometry() %>%
   as.data.table()
 
+out_fish_df_v2 = 
+  out_fish_v2 %>% 
+  st_drop_geometry() %>%
+  as.data.table()
 
-writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)
+fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_SA_allWS_240304.csv'))
+fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_SA_top5up_240304.csv'))
 
-writeRaster(out_fish_r2, paste0(proj_dir, 'Upstream/test3.tif'), overwrite=TRUE)
+
+
+#writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)
+
+#writeRaster(out_fish_r2, paste0(proj_dir, 'Upstream/test3.tif'), overwrite=TRUE)
 
 test = 
   rast(paste0(database, "Forestry/forest_fragmentation_Ma_2023/FFI2000.tif")) %>%
