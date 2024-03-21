@@ -72,7 +72,7 @@ rm(data_in_atlas)
 
 #Load the continent level hydroBASIN file
 data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_sa_lev01-12_v1c/hybas_sa_lev12_v1c.shp"))
+  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_af_lev01-12_v1c/hybas_af_lev12_v1c.shp"))
 
 #Create a non-spatial DT copy to improve computation efficiency
 data_in_asDT = 
@@ -94,7 +94,7 @@ rm(data_in1)
 
 #Load the upstream-HYBAS linkage
 #This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_SA_wdis.rds'))
+upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AF_wdis.rds'))
 
 #Load the data to be estimated
 ##############################
@@ -227,7 +227,7 @@ upstream_HYBAS_list =
   split(data_sub_DT, by = 'HYBAS_ID') 
 
 #Test - list number 27
-dist_threshold_km = 99999 #Use 99999 for essentially no dist threshold
+dist_threshold_km = 200 #Use 99999 for essentially no dist threshold
 
 
 #Function to get the centroid distances
@@ -273,7 +273,7 @@ out_list_merged = rbindlist(out_list)
 
 
 #Save the summarized output
-#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_SA_nodist.rds'))
+saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AF_w200km.rds'))
 
 test = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_set2_SA.rds'))
 test2 = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_SA_w200km.rds'))

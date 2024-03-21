@@ -70,7 +70,7 @@ data_in_atlas_DT =
 rm(data_in_atlas)
 
 data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_sa_lev01-12_v1c/hybas_sa_lev12_v1c.shp"))
+  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_af_lev01-12_v1c/hybas_af_lev12_v1c.shp"))
 
 data_in_asDT = 
   data_in1 %>% 
@@ -91,13 +91,18 @@ rm(data_in1)
 
 ##############################
 #Load the upstream-HYBAS summarized linkage
+
+region = 'AF'
+dist_threshold = 'nodist'
+
+
 upstream_summarized_HYBAS = 
-  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_SA_w200km.rds')) %>%
+  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_', region, '_', dist_threshold, '.rds')) %>%
   mutate(across(natural_only:total_cells, ~ .x/total_cells))
 
 #Load the upstream-HYBAS linkage
 #This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_SA.rds'))
+upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_', region, '.rds'))
 
 #Find the centroid of each HYBAS polygon
 data_sub_centroid = 
@@ -175,11 +180,11 @@ out_fish_v2 =
 #############################
 #Tests: Create rasters and visualize output
 out_fish_r = 
-  fasterize(out_fish_v1, fishnet.r %>% raster, field = "natural_only") %>%
+  fasterize(out_fish_v1, fishnet.r %>% raster, field = "natural_all") %>%
   crop(data_sub)
 
 out_fish_r2 =
-  fasterize(out_fish_v2, fishnet.r %>% raster, field = "natural_only") %>%
+  fasterize(out_fish_v2, fishnet.r %>% raster, field = "natural_all") %>%
   crop(data_sub)
 
 #############################
@@ -194,9 +199,13 @@ out_fish_df_v2 =
   st_drop_geometry() %>%
   as.data.table()
 
-fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_SA_allWS_w200km_240304.csv'))
-fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_SA_top5up_w200km_240304.csv'))
 
+#############################
+#Write Output
+
+
+fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_', region, '_allWS_', dist_threshold, '_240304.csv'))
+fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_', region, '_top5up_', dist_threshold, '_240304.csv'))
 
 
 #writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)

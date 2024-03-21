@@ -55,7 +55,7 @@ fishnet.r =
   rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
 
 ##############################
-
+#Grid-level
 #HydroATLAS
 hydroATLAS = 
   fread(paste0(database, "Watersheds/HydroATLAS/Processed/hydroATLAS_05deg.csv")) %>%
@@ -67,22 +67,46 @@ BII = fread(paste0(database, "Biodiversity/Intactness/BII_Newbold_2016/processed
 #BHI
 BHI = fread(paste0(database, "Biodiversity/Habitat/bio_habitat_index_Harwood_2022/processed/BHI_prop_species_05deg.csv"))
 
+#FFI
+FFI = fread(paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_05_v2.csv"))
 
+#Forest Mangement
+FM = fread(paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05_proportions.csv"))
+
+#Upstream
+SA_nodist = fread(paste0(proj_dir, "Upstream/upstream_SA_allWS_240304.csv"))
+SA_200km = fread(paste0(proj_dir, "Upstream/upstream_SA_allWS_w200km_240304.csv"))
+
+AF_nodist = fread(paste0(proj_dir, "Upstream/upstream_AF_allWS_nodist_240304.csv"))
+AF_200km = fread(paste0(proj_dir, "Upstream/upstream_AF_allWS_w200km_240304.csv"))
 
 #Combined
+# allData = 
+#   merge(hydroATLAS, BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+#   merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+#   mutate(for_pc_sse_interval = cut(for_pc_sse, n = 4, breaks = c(-Inf, 25, 50, 75, 100)),
+#          other_pc_sse_est = 100-(for_pc_sse+urb_pc_sse+crp_pc_sse)) %>%
+#   rowwise() %>%
+#   mutate(maxLC = which.max(c(for_pc_sse, urb_pc_sse, crp_pc_sse, other_pc_sse_est))) %>%
+#   #filter(for_pc_sse > 50 | urb_pc_sse > 50 | crp_pc_sse > 50) %>%
+#   group_by(maxLC) %>%
+#   summarise(BII_med = median(BII_med, na.rm = T),
+#             BHI_med = median(BHI_2020_med, na.rm = T)) %>%
+#   mutate(LC_est = c('Forest', 'Urban', 'Crop', 'Other'))
+
 allData = 
-  merge(hydroATLAS, BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+  SA_200km %>%
+  rbind(AF_200km) %>%
+  merge(BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
-  mutate(for_pc_sse_interval = cut(for_pc_sse, n = 4, breaks = c(-Inf, 25, 50, 75, 100)),
-         other_pc_sse_est = 100-(for_pc_sse+urb_pc_sse+crp_pc_sse)) %>%
-  rowwise() %>%
-  mutate(maxLC = which.max(c(for_pc_sse, urb_pc_sse, crp_pc_sse, other_pc_sse_est))) %>%
-  #filter(for_pc_sse > 50 | urb_pc_sse > 50 | crp_pc_sse > 50) %>%
-  group_by(maxLC) %>%
-  summarise(BII_med = median(BII_med, na.rm = T),
-            BHI_med = median(BHI_2020_med, na.rm = T)) %>%
-  mutate(LC_est = c('Forest', 'Urban', 'Crop', 'Other'))
+  merge(FFI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+  merge(FM, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T)
+  
 
 
+cor.test(allData$BHI_2010, allData$BHI_2010_bil)
+cor.test(allData$natural_all.x, allData$natural_all.y)
+cor.test(allData$planted.x, allData$planted.y)
+cor.test(allData$FFI2020, allData$FFI2020_med)
 
-cor.test(allData$for_pc_sse, allData$BII_med)
+
