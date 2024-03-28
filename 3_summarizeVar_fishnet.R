@@ -50,8 +50,14 @@ wb_regions =
 
 #Load the fishnet
 fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp')) %>%
-  st_make_valid()
+  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp')) 
+
+#Run the fix geometry algorith
+data_fixed_geom <- qgis_run_algorithm(
+  "native:fixgeometries",
+  INPUT = fishnet)
+
+fishnet = st_read(qgis_extract_output(data_fixed_geom, "OUTPUT"))
 
 fishnet.r = 
   rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
@@ -70,7 +76,7 @@ data_in_atlas_DT =
 rm(data_in_atlas)
 
 data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_af_lev01-12_v1c/hybas_af_lev12_v1c.shp"))
+  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_sa_lev01-12_v1c/hybas_sa_lev12_v1c.shp"))
 
 data_in_asDT = 
   data_in1 %>% 
@@ -90,19 +96,6 @@ data_sub =
 rm(data_in1)
 
 ##############################
-#Load the upstream-HYBAS summarized linkage
-
-region = 'AF'
-dist_threshold = 'nodist'
-
-
-upstream_summarized_HYBAS = 
-  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_', region, '_', dist_threshold, '.rds')) %>%
-  mutate(across(natural_only:total_cells, ~ .x/total_cells))
-
-#Load the upstream-HYBAS linkage
-#This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_', region, '.rds'))
 
 #Find the centroid of each HYBAS polygon
 data_sub_centroid = 
@@ -124,9 +117,23 @@ qgis_join =
 
 data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
+#Load the upstream-HYBAS summarized linkage
+region = 'SA'
+dist_threshold = 'w200km' #nodist #w200km
+
+
+upstream_summarized_HYBAS = 
+  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_', region, '_', dist_threshold, '.rds')) %>%
+  mutate(across(natural_only:total_cells, ~ .x/total_cells))
+
+#Load the upstream-HYBAS linkage
+#This was calculated in step 1 of the workflow
+upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_', region, '.rds'))
 
 #Create a list of variables to summarize
-var_mean = c("FFI2000", "FFI2020", "BHI_2010", "BHI_2020")
+var_mean = c("FFI2000", "FFI2020", "BHI_2010", "BHI_2020", "ForestAge_TC000", 
+             "ForestAge_TC020", "Combined_SR_2022", "Amphibians_SR_2022", "Birds_SR_2022",
+             "Mammals_SR_2022", "Reptiles_SR_2022")
 var_mode = c("FM_class_mode")
 var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agroforestry")
 
@@ -141,7 +148,7 @@ data_in_summarized_v1 =
   #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
   arrange(desc(upstream_total)) %>% 
   group_by(Id) %>%
-  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
+  summarise(across(all_of(var_mean[var_mean %in% colnames(upstream_summarized_HYBAS)]), ~ mean(.x, na.rm = TRUE)),
             across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
             across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
   as.data.table()
@@ -158,7 +165,7 @@ data_in_summarized_v2 =
   arrange(desc(upstream_total)) %>% 
   group_by(Id) %>%
   slice(1:5) %>%
-  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
+  summarise(across(all_of(var_mean[var_mean %in% colnames(upstream_summarized_HYBAS)]), ~ mean(.x, na.rm = TRUE)),
             across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
             across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
   as.data.table()
@@ -180,11 +187,11 @@ out_fish_v2 =
 #############################
 #Tests: Create rasters and visualize output
 out_fish_r = 
-  fasterize(out_fish_v1, fishnet.r %>% raster, field = "natural_all") %>%
+  fasterize(out_fish_v1, fishnet.r %>% raster, field = "BHI_2020") %>%
   crop(data_sub)
 
 out_fish_r2 =
-  fasterize(out_fish_v2, fishnet.r %>% raster, field = "natural_all") %>%
+  fasterize(out_fish_v2, fishnet.r %>% raster, field = "BHI_2020") %>%
   crop(data_sub)
 
 #############################

@@ -72,7 +72,7 @@ rm(data_in_atlas)
 
 #Load the continent level hydroBASIN file
 data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_af_lev01-12_v1c/hybas_af_lev12_v1c.shp"))
+  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_as_lev01-12_v1c/hybas_as_lev12_v1c.shp"))
 
 #Create a non-spatial DT copy to improve computation efficiency
 data_in_asDT = 
@@ -94,7 +94,7 @@ rm(data_in1)
 
 #Load the upstream-HYBAS linkage
 #This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AF_wdis.rds'))
+upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AS_wdis.rds'))
 
 #Load the data to be estimated
 ##############################
@@ -181,6 +181,46 @@ data_BHI = c(data_BHI1, data_BHI2)
 names(data_BHI) = c("BHI_2010", "BHI_2020")
 
 ##############################
+#Forest Age
+path2data = paste0(database, "Forestry/forest_age_Besnard_2021/")
+
+data_forestAge = 
+  rast(paste0(path2data, "202437221216222_BGIForestAgeMPIBGC1.0.0.nc")) %>%
+  .[[c(1,3)]] %>% #Select the 20% threshold and no threshold case
+  terra::resample(data_in1, method = 'med')
+
+##############################
+#IUCN Species Richness
+path2data = paste0(database, "Biodiversity/Richness/IUCN_Species Richness_2022_2/")
+
+data_richness1 = 
+  rast(paste0(path2data, "Combined_SR_2022/Combined_SR_2022.tif")) %>%
+  terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(data_in1, method = 'bilinear')
+
+data_richness2 = 
+  rast(paste0(path2data, "Amphibians_SR_2022/Amphibians_SR_2022.tif")) %>%
+  terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(data_in1, method = 'bilinear')
+
+data_richness3 = 
+  rast(paste0(path2data, "Birds_SR_2022/Birds_SR_2022.tif")) %>%
+  terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(data_in1, method = 'bilinear')
+
+data_richness4 = 
+  rast(paste0(path2data, "Mammals_SR_2022/Mammals_SR_2022.tif")) %>%
+  terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(data_in1, method = 'bilinear')
+
+data_richness5 = 
+  rast(paste0(path2data, "Reptiles_SR_2022/Reptiles_SR_2022.tif")) %>%
+  terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
+  terra::resample(data_in1, method = 'bilinear')
+
+data_richness = c(data_richness1, data_richness2, data_richness3, data_richness4, data_richness5)
+
+##############################
 #Create a spatvector version of the vector HYBAS file  
 data_sub_sv = 
   data_sub %>% 
@@ -190,7 +230,7 @@ data_sub_sv =
 #Variables summarized by mean
 #Create a raster stack with all the indices
 data_in_mean = 
-  c(data_in1, data_in2, data_BHI) 
+  c(data_in1, data_in2, data_BHI, data_forestAge, data_richness) 
 
 #Variables summarized by mode (categorical var)
 data_in_mode = 
@@ -241,7 +281,7 @@ summarize_upstream <- function(df) {
   #Summarise variables 
   cur_var_upstream = 
     var_HYBAS_all[HYBAS_ID %in% cur_upstream_HYBAS$upstream_chain] %>%
-    summarise(across(FFI2000:BHI_2020, ~ mean(.x, na.rm = T)),
+    summarise(across(FFI2000:Reptiles_SR_2022, ~ mean(.x, na.rm = T)),
               across(FM_class_mode, ~ modal(.x, na.rm = T)),
               across(natural_only:total_cells, ~ sum(.x, na.rm = T))) %>%
     mutate(upstream_total = length(unique(cur_upstream_HYBAS$upstream_chain)))
@@ -273,7 +313,11 @@ out_list_merged = rbindlist(out_list)
 
 
 #Save the summarized output
-saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AF_w200km.rds'))
+#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AS_nodist.rds'))
+#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AS_w200km.rds'))
+
+
+
 
 test = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_set2_SA.rds'))
 test2 = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_SA_w200km.rds'))

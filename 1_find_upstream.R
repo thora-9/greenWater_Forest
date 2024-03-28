@@ -68,7 +68,7 @@ data_in_atlas_DT =
 rm(data_in_atlas)
 
 data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_af_lev01-12_v1c/hybas_af_lev12_v1c.shp"))
+  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_as_lev01-12_v1c/hybas_as_lev12_v1c.shp"))
 
 data_in_asDT = 
   data_in1 %>% 
@@ -151,9 +151,9 @@ end - start
 #Merge the lists
 out_list_merged = rbindlist(out_list)
 
-
-#fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AF.csv'))
-#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AF.rds'))
+# 
+# fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AS.csv'))
+# saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AS.rds'))
 
 ########################################################
 #Tests
@@ -171,8 +171,8 @@ out_df_mod =
 #Get all the upstream watersheds for the given watershed
 test_upstream = 
   data_in_atlas_DT %>%
-  filter(HYBAS_ID %in% out_list_merged[HYBAS_ID == 1120020040]$upstream_chain) %>%
-  filter(HYBAS_ID != 1120020040)
+  filter(HYBAS_ID %in% out_list_merged[HYBAS_ID == 4120716950]$upstream_chain) %>%
+  filter(HYBAS_ID != 4120716950)
 
 test_upstream_spatial= 
   data_sub %>%
@@ -182,7 +182,7 @@ test_upstream_spatial=
 #Get the hydroATLAS calculated value
 test_current = 
   data_in_atlas_DT %>%
-  filter(HYBAS_ID == 1120020040)
+  filter(HYBAS_ID == 4120716950)
 
 #Assess the ratio
 #GDP
@@ -198,7 +198,7 @@ sum(test_upstream$pop_ct_ssu)/test_current$pop_ct_usu
 #Load the upstream-HYBAS linkage
 #This was calculated in step 1 of the workflow
 upstream_HYBAS = 
-  readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AF.rds')) 
+  readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AS.rds')) 
 
 
 #Find the centroid of each HYBAS polygon
@@ -252,9 +252,9 @@ out_list_merged = rbindlist(upstream_HYBAS_list)
 out_list_merged$distance = unlist(out_list, use.names = F)
 
 # 
-# fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AF_wdist.csv'))
-# saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AF_wdis.rds'))
-
+# fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AS_wdist.csv'))
+# saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AS_wdis.rds'))
+# 
 
 
 
@@ -264,11 +264,11 @@ out_list_merged$distance = unlist(out_list, use.names = F)
 
 test3a = 
   data_sub_centroid %>% 
-  filter(HYBAS_ID == 1120370990) 
+  filter(HYBAS_ID == 4121167000) 
 
 test3c = 
   data_sub_centroid %>% 
-  filter(HYBAS_ID == 1121817210) 
+  filter(HYBAS_ID == 4121166550) 
 
 # test3b = 
 #   data_sub_centroid %>% 

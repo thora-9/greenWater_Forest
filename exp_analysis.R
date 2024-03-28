@@ -55,6 +55,21 @@ fishnet.r =
   rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
 
 ##############################
+#Soil Moisture data
+sm_data = read_dta(paste0(proj_dir, "esha-data/econ_greenwater_paper data/sm_shockstouse_19702016.dta"))
+
+scale_vec = function(x) {c(scale(x))} #Need this to be a vectorized version - https://stackoverflow.com/questions/54695830/data-table-create-multiple-columns-with-lapply-and-sd
+
+sm_data_sub = 
+  sm_data %>%
+  dplyr::select(1:6) %>%
+  as.data.table() %>%
+  .[,`:=`(z_score_mean = scale_vec(mean_ors_0100), 
+          z_score_olc = scale_vec(olc_ors_0100)), OBJECTID] %>%
+  .[,`:=`(z_mean_3yrAve = frollmean(z_score_mean, n = 3, fill = NA),
+          z_olc_3yrAve = frollmean(z_score_olc, n = 3, fill = NA)), OBJECTID]
+  
+##############################
 #Grid-level
 #HydroATLAS
 hydroATLAS = 
@@ -74,11 +89,14 @@ FFI = fread(paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_
 FM = fread(paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05_proportions.csv"))
 
 #Upstream
-SA_nodist = fread(paste0(proj_dir, "Upstream/upstream_SA_allWS_240304.csv"))
-SA_200km = fread(paste0(proj_dir, "Upstream/upstream_SA_allWS_w200km_240304.csv"))
+SA_nodist = fread(paste0(proj_dir, "Upstream/upstream_SA_top5up_240304.csv"))
+SA_200km = fread(paste0(proj_dir, "Upstream/upstream_SA_top5up_w200km_240304.csv"))
 
-AF_nodist = fread(paste0(proj_dir, "Upstream/upstream_AF_allWS_nodist_240304.csv"))
-AF_200km = fread(paste0(proj_dir, "Upstream/upstream_AF_allWS_w200km_240304.csv"))
+AF_nodist = fread(paste0(proj_dir, "Upstream/upstream_AF_top5up_nodist_240304.csv"))
+AF_200km = fread(paste0(proj_dir, "Upstream/upstream_AF_top5up_w200km_240304.csv"))
+
+AS_nodist = fread(paste0(proj_dir, "Upstream/upstream_AS_top5up_nodist_240304.csv"))
+AS_200km = fread(paste0(proj_dir, "Upstream/upstream_AS_top5up_w200km_240304.csv"))
 
 #Combined
 # allData = 
@@ -94,14 +112,73 @@ AF_200km = fread(paste0(proj_dir, "Upstream/upstream_AF_allWS_w200km_240304.csv"
 #             BHI_med = median(BHI_2020_med, na.rm = T)) %>%
 #   mutate(LC_est = c('Forest', 'Urban', 'Crop', 'Other'))
 
+###################################
 allData = 
   SA_200km %>%
-  rbind(AF_200km) %>%
+  rbind(AF_200km) %>% 
+  rbind(AS_200km, fill=TRUE) %>% 
+  merge(hydroATLAS, by = c("Lon", "Lat"), all.x = T) %>%
   merge(BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(FFI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(FM, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T)
+
+test = allData %>%filter(Lon == -16.75)
   
+parameter <- par(mfrow=c(2,2)) #set up the plotting space
+
+plot(allData$BHI_2010, allData$BHI_2010_bil, xlab = 'Upstream: BHI', ylab = 'Grid-level: BHI')
+abline(coef = c(0,1), col = 'green')
+plot(allData$natural_all.x, allData$natural_all.y, xlab = 'Upstream: Natural Forests', ylab = 'Grid-level: Natural Forests')
+abline(coef = c(0,1), col = 'green')
+plot(allData$planted.x, allData$planted.y, xlab = 'Upstream: Planeted Forests', ylab = 'Grid-level: Planeted Forests')
+abline(coef = c(0,1), col = 'green')
+plot(allData$FFI2020, allData$FFI2020_med, xlab = 'Upstream: FFI', ylab = 'Grid-level: FFI')
+abline(coef = c(0,1), col = 'green')
+
+
+cor.test(allData$BHI_2010, allData$BHI_2010_bil)
+cor.test(allData$natural_all.x, allData$natural_all.y)
+cor.test(allData$planted.x, allData$planted.y)
+cor.test(allData$FFI2020, allData$FFI2020_med)
+
+cor.test(allData$ForestAge_TC020, allData$for_pc_use)
+
+
+parameter <- par(mfrow=c(1,1)) #set up the plotting space
+
+#Tests: Create rasters and visualize output
+out_fish_r = 
+  rasterFromXYZ(allData[, c("Lon", "Lat","for_pc_sse")]) 
+
+out_fish_r2 = 
+  rasterFromXYZ(allData[, c("Lon", "Lat","natural_all.y")]) 
+
+
+###################################
+allData = 
+  SA_nodist %>%
+  rbind(AF_nodist) %>%
+  merge(BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+  merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+  merge(FFI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
+  merge(FM, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T)
+
+parameter <- par(mfrow=c(2,2)) #set up the plotting space
+
+plot(allData$BHI_2010, allData$BHI_2010_bil, xlab = 'Upstream: BHI', ylab = 'Grid-level: BHI')
+abline(coef = c(0,1), col = 'green')
+plot(allData$natural_all.x, allData$natural_all.y, xlab = 'Upstream: Natural Forests', ylab = 'Grid-level: Natural Forests')
+abline(coef = c(0,1), col = 'green')
+plot(allData$planted.x, allData$planted.y, xlab = 'Upstream: Planeted Forests', ylab = 'Grid-level: Planeted Forests')
+abline(coef = c(0,1), col = 'green')
+plot(allData$FFI2020, allData$FFI2020_med, xlab = 'Upstream: FFI', ylab = 'Grid-level: FFI')
+abline(coef = c(0,1), col = 'green')
+
+
+(ggplot(allData, aes(x=natural_all.x,y=natural_all.y)) +
+    stat_summary_bin(fun='mean', bins=40,
+                     color='orange', size=2, geom='point'))
 
 
 cor.test(allData$BHI_2010, allData$BHI_2010_bil)
