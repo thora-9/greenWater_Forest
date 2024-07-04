@@ -40,6 +40,12 @@ per_na = function(x){
   return(out)
 }
 
+#Specify the continent
+cur_continent = 'Australasia'
+cur_continent_abr = 'AU'
+cur_continent_abr_UP = 'au'
+dist_threshold = 'w200km' #nodist #w200km
+
 ##############################
 ####Load World Regions
 wb_regions = 
@@ -75,25 +81,45 @@ data_in_atlas_DT =
 
 rm(data_in_atlas)
 
-data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_sa_lev01-12_v1c/hybas_sa_lev12_v1c.shp"))
 
+##############################
+#Continent-level
+
+path2WS = paste0(database, 'Watersheds/HydroBASIN/hybas_', cur_continent_abr, '_lev01-12_v1c/')
+
+data_in = 
+  st_read(paste0(path2WS, 'hybas_', cur_continent_abr, '_lev12_v1c.shp')) %>%
+  st_make_valid()
+
+#Create a non-spatial DT copy to improve computation efficiency
 data_in_asDT = 
-  data_in1 %>% 
+  data_in %>% 
   st_drop_geometry() %>%
   as.data.table()
 
-
+#Remove variables improve computation efficiency
 data_sub_DT = 
   data_in_asDT[, 1:4]
 
 #Get just the HYBAS_ID to reduce memory/computation load and then get the centroid
 data_sub = 
-  data_in1 %>%
+  data_in %>%
   dplyr::select(1:4) 
 
 #To free memory
-rm(data_in1)
+rm(data_in)
+
+######
+######Load here after changing distance threshold######
+######
+
+#Load the upstream-HYBAS summarized linkage
+path2upstream = paste0(proj_dir, 'Upstream/', cur_continent, '/')
+
+upstream_summarized_HYBAS = 
+  readRDS(paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_', dist_threshold, '.rds')) %>%
+  mutate(across(natural_only:total_cells, ~ .x/total_cells))
+
 
 ##############################
 
@@ -117,23 +143,11 @@ qgis_join =
 
 data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
-#Load the upstream-HYBAS summarized linkage
-region = 'SA'
-dist_threshold = 'w200km' #nodist #w200km
-
-
-upstream_summarized_HYBAS = 
-  readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_', region, '_', dist_threshold, '.rds')) %>%
-  mutate(across(natural_only:total_cells, ~ .x/total_cells))
-
-#Load the upstream-HYBAS linkage
-#This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_', region, '.rds'))
-
+##############################
 #Create a list of variables to summarize
 var_mean = c("FFI2000", "FFI2020", "BHI_2010", "BHI_2020", "ForestAge_TC000", 
              "ForestAge_TC020", "Combined_SR_2022", "Amphibians_SR_2022", "Birds_SR_2022",
-             "Mammals_SR_2022", "Reptiles_SR_2022")
+             "Mammals_SR_2022", "Reptiles_SR_2022", "BII")
 var_mode = c("FM_class_mode")
 var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agroforestry")
 
@@ -210,9 +224,15 @@ out_fish_df_v2 =
 #############################
 #Write Output
 
+#Save the summarized output
 
-fwrite(out_fish_df_v1, paste0(proj_dir, 'Upstream/upstream_', region, '_allWS_', dist_threshold, '_240304.csv'))
-fwrite(out_fish_df_v2, paste0(proj_dir, 'Upstream/upstream_', region, '_top5up_', dist_threshold, '_240304.csv'))
+fwrite(out_fish_df_v1, 
+       paste0(path2upstream, 'upstream_', cur_continent_abr_UP, '_allWS_', dist_threshold, 
+              '_240407.csv'))
+
+fwrite(out_fish_df_v1, 
+       paste0(path2upstream, 'upstream_', cur_continent_abr_UP, '_top5up_', dist_threshold, 
+              '_240407.csv'))
 
 
 #writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)

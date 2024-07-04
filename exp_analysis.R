@@ -20,6 +20,7 @@ library(stars)
 library(tidyterra)
 library(modelr)
 library(haven)
+library(binsreg)
 
 
 #paths
@@ -58,17 +59,35 @@ fishnet.r =
 #Soil Moisture data
 sm_data = read_dta(paste0(proj_dir, "esha-data/econ_greenwater_paper data/sm_shockstouse_19702016.dta"))
 
-scale_vec = function(x) {c(scale(x))} #Need this to be a vectorized version - https://stackoverflow.com/questions/54695830/data-table-create-multiple-columns-with-lapply-and-sd
+# scale_vec = function(x) {c(scale(x))} #Need this to be a vectorized version - https://stackoverflow.com/questions/54695830/data-table-create-multiple-columns-with-lapply-and-sd
+# 
+# sm_data_sub = 
+#   sm_data %>%
+#   dplyr::select(1:6) %>%
+#   as.data.table() %>%
+#   .[,`:=`(z_score_mean = scale_vec(mean_ors_0100), 
+#           z_score_olc = scale_vec(olc_ors_0100)), OBJECTID] %>%
+#   .[,`:=`(z_mean_3yrAve = frollmean(z_score_mean, n = 3, fill = NA),
+#           z_olc_3yrAve = frollmean(z_score_olc, n = 3, fill = NA)), OBJECTID]
 
-sm_data_sub = 
-  sm_data %>%
-  dplyr::select(1:6) %>%
-  as.data.table() %>%
-  .[,`:=`(z_score_mean = scale_vec(mean_ors_0100), 
-          z_score_olc = scale_vec(olc_ors_0100)), OBJECTID] %>%
-  .[,`:=`(z_mean_3yrAve = frollmean(z_score_mean, n = 3, fill = NA),
-          z_olc_3yrAve = frollmean(z_score_olc, n = 3, fill = NA)), OBJECTID]
+sm_data_sub = fread(paste0(proj_dir, "esha-data/econ_greenwater_paper data/sm_shockstouse_19702016_processed.csv"))
+
+#fwrite(sm_data_sub, paste0(proj_dir, "esha-data/econ_greenwater_paper data/sm_shockstouse_19702016_processed.csv"))
   
+##############################
+#Precipitation
+precip = fread(paste0(database,'Climate/Precipitation/CRU/cru_precip_70_22_yearly.csv'))
+
+#SM-Precip (Dry spells)
+sm_precip = 
+  sm_data_sub %>%
+  merge(precip, by.x = c('longitude', 'latitude', 'year'), by.y = c('lon', 'lat', 'year'), all.x = T) %>%
+  .[!is.na(cell_id)] %>%
+  .[z_score_bin_yearly == 'Dry'] %>%
+  dplyr::select(Lon = longitude, Lat = latitude, OBJECTID, pre_yearly, z_score_mean:z_olc_3yrAve) %>%
+  group_by(Lon, Lat, OBJECTID) %>%
+  summarise(across(z_score_mean:z_olc_3yrAve, ~ sum(.x, na.rm = T)))
+
 ##############################
 #Grid-level
 #HydroATLAS
@@ -88,15 +107,16 @@ FFI = fread(paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_
 #Forest Mangement
 FM = fread(paste0(database, "Forestry/forest_managemen_lesiv_2021/forest_management_05_proportions.csv"))
 
-#Upstream
-SA_nodist = fread(paste0(proj_dir, "Upstream/upstream_SA_top5up_240304.csv"))
-SA_200km = fread(paste0(proj_dir, "Upstream/upstream_SA_top5up_w200km_240304.csv"))
 
-AF_nodist = fread(paste0(proj_dir, "Upstream/upstream_AF_top5up_nodist_240304.csv"))
-AF_200km = fread(paste0(proj_dir, "Upstream/upstream_AF_top5up_w200km_240304.csv"))
+#Get the files
+path2data = paste0(proj_dir, "Upstream/")
+pattern = "top5up_w200km_240407"
+files = list.files(path2data, pattern, recursive = T, full.names = T)
+file_names = list.files(path2data, pattern, recursive = T)
 
-AS_nodist = fread(paste0(proj_dir, "Upstream/upstream_AS_top5up_nodist_240304.csv"))
-AS_200km = fread(paste0(proj_dir, "Upstream/upstream_AS_top5up_w200km_240304.csv"))
+upstream_data = 
+  lapply(files, fread) %>%
+  rbindlist()
 
 #Combined
 # allData = 
@@ -117,6 +137,7 @@ allData =
   SA_200km %>%
   rbind(AF_200km) %>% 
   rbind(AS_200km, fill=TRUE) %>% 
+  merge(sm_precip, by = c("Lon", "Lat"), all.x = T) %>%
   merge(hydroATLAS, by = c("Lon", "Lat"), all.x = T) %>%
   merge(BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
@@ -142,7 +163,7 @@ cor.test(allData$natural_all.x, allData$natural_all.y)
 cor.test(allData$planted.x, allData$planted.y)
 cor.test(allData$FFI2020, allData$FFI2020_med)
 
-cor.test(allData$ForestAge_TC020, allData$for_pc_use)
+binsreg(allData$z_score_mean, allData$for_pc_use, randcut=1)
 
 
 parameter <- par(mfrow=c(1,1)) #set up the plotting space
@@ -154,15 +175,21 @@ out_fish_r =
 out_fish_r2 = 
   rasterFromXYZ(allData[, c("Lon", "Lat","natural_all.y")]) 
 
+testRaster = 
+  rasterFromXYZ(BII[, c("x", "y","BII_med")]) 
 
 ###################################
 allData = 
-  SA_nodist %>%
-  rbind(AF_nodist) %>%
+  sm_precip %>%
+  merge(hydroATLAS, by = c("Lon", "Lat"), all.x = T) %>%
   merge(BII, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(BHI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(FFI, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T) %>%
   merge(FM, by.x = c("Lon", "Lat"), by.y = c("x", "y"), all.x = T)
+
+
+binsreg(allData$z_score_mean, allData$for_pc_use, randcut=1)
+
 
 parameter <- par(mfrow=c(2,2)) #set up the plotting space
 

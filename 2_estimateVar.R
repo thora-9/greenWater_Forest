@@ -20,6 +20,7 @@ library(stars)
 library(tidyterra)
 library(modelr)
 library(haven)
+library(pbapply)
 
 
 #paths
@@ -38,6 +39,12 @@ per_na = function(x){
   out = apply(x, MARGIN = 2, FUN = function(x){round(sum(is.na(x))*100/length(x), 2)})
   return(out)
 }
+
+
+#Specify the continent
+cur_continent = 'Asia'
+cur_continent_abr = 'AS'
+cur_continent_abr_UP = 'as'
 
 ##############################
 ####Load World Regions
@@ -70,13 +77,19 @@ data_in_atlas_DT =
 #Remove the spatial copy (continent level file loaded below)
 rm(data_in_atlas)
 
-#Load the continent level hydroBASIN file
-data_in1 = 
-  st_read(paste0(database, "Watersheds/HydroBASIN/hybas_as_lev01-12_v1c/hybas_as_lev12_v1c.shp"))
+
+##############################
+#Continent-level
+
+path2WS = paste0(database, 'Watersheds/HydroBASIN/hybas_', cur_continent_abr, '_lev01-12_v1c/')
+
+data_in = 
+  st_read(paste0(path2WS, 'hybas_', cur_continent_abr, '_lev12_v1c.shp')) %>%
+  st_make_valid()
 
 #Create a non-spatial DT copy to improve computation efficiency
 data_in_asDT = 
-  data_in1 %>% 
+  data_in %>% 
   st_drop_geometry() %>%
   as.data.table()
 
@@ -86,15 +99,16 @@ data_sub_DT =
 
 #Get just the HYBAS_ID to reduce memory/computation load and then get the centroid
 data_sub = 
-  data_in1 %>%
+  data_in %>%
   dplyr::select(1:4) 
 
 #To free memory
-rm(data_in1)
+rm(data_in)
 
 #Load the upstream-HYBAS linkage
 #This was calculated in step 1 of the workflow
-upstream_HYBAS = readRDS(paste0(proj_dir, 'Upstream/upstream_codes_AS_wdis.rds'))
+path2upstream = paste0(proj_dir, 'Upstream/', cur_continent, '/')
+upstream_HYBAS = readRDS(paste0(path2upstream, 'upstream_codes_',cur_continent_abr_UP, '_wdis.rds'))
 
 #Load the data to be estimated
 ##############################
@@ -221,6 +235,16 @@ data_richness5 =
 data_richness = c(data_richness1, data_richness2, data_richness3, data_richness4, data_richness5)
 
 ##############################
+#Biodiversity Intactness Index
+path2data = paste0(database, "Biodiversity/Intactness/BII_Newbold_2016/")
+
+data_BII = 
+  rast(paste0(path2data, "lbii.asc")) %>%
+  terra::resample(data_in1, method = 'med')
+
+names(data_BII) = 'BII'
+
+##############################
 #Create a spatvector version of the vector HYBAS file  
 data_sub_sv = 
   data_sub %>% 
@@ -230,7 +254,7 @@ data_sub_sv =
 #Variables summarized by mean
 #Create a raster stack with all the indices
 data_in_mean = 
-  c(data_in1, data_in2, data_BHI, data_forestAge, data_richness) 
+  c(data_in1, data_in2, data_BHI, data_forestAge, data_richness, data_BII) 
 
 #Variables summarized by mode (categorical var)
 data_in_mode = 
@@ -241,7 +265,7 @@ data_in_count =
   c(all_32x)
 
 ##############################
-#Extract the values
+#Extract the values 
 var_HYBAS_mean = 
   terra::extract(data_in_mean, data_sub_sv, fun = 'mean', na.rm=TRUE, bind = TRUE) %>%
   as.data.table()
@@ -281,7 +305,7 @@ summarize_upstream <- function(df) {
   #Summarise variables 
   cur_var_upstream = 
     var_HYBAS_all[HYBAS_ID %in% cur_upstream_HYBAS$upstream_chain] %>%
-    summarise(across(FFI2000:Reptiles_SR_2022, ~ mean(.x, na.rm = T)),
+    summarise(across(FFI2000:BII, ~ mean(.x, na.rm = T)),
               across(FM_class_mode, ~ modal(.x, na.rm = T)),
               across(natural_only:total_cells, ~ sum(.x, na.rm = T))) %>%
     mutate(upstream_total = length(unique(cur_upstream_HYBAS$upstream_chain)))
@@ -313,8 +337,12 @@ out_list_merged = rbindlist(out_list)
 
 
 #Save the summarized output
-#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AS_nodist.rds'))
-#saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_VAR_AS_w200km.rds'))
+
+if(dist_threshold_km == 99999){
+  saveRDS(out_list_merged, paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_nodist.rds'))
+} else if (dist_threshold_km == 200){
+  saveRDS(out_list_merged, paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_w200km.rds'))
+}
 
 
 
