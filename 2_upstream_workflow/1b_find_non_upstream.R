@@ -2,64 +2,16 @@
 ##Get Non-Upstream (HydroATLAS/BASIN)
 #####################################
 
-library(tidync)
-library(data.table)
-library(tidyverse)
-library(lubridate)
-library(zyp)
-library(sf)
-library(raster)
-library(terra)
-library(RColorBrewer)
-library(rasterVis)
-library(xts)
-library(fasterize)
-library(stringdist)
-library(fuzzyjoin)
-library(stars)
-library(tidyterra)
-library(modelr)
-library(haven)
-library(pbapply)
+#Additional packages to run this script
+#library(future)
+#library(future.apply)
 
-#paths
-machine = 'local'
-if(machine == 'gcp'){
-  proj_dir = "/home/thora/Projects/greenWater_Forest/"
-  database = "/home/thora/Database/"
-} else{
-  proj_dir = "~/Dropbox/WB/greenWater_Forest/"
-  database = "~/Dropbox/Database/"
-}
-
-
-#Custom function
-per_na = function(x){
-  out = apply(x, MARGIN = 2, FUN = function(x){round(sum(is.na(x))*100/length(x), 2)})
-  return(out)
-}
-
+source("0_setEnvironment.R")
 
 #Specify the continent
-cur_continent = 'South America'
-cur_continent_abr = 'SA'
-cur_continent_abr_UP = 'sa'
-
-
-##############################
-####Load World Regions
-wb_regions = 
-  st_read(paste0(database, "Admin/WB_Regions/WB_countries_Admin0_10m.shp")) %>%
-  dplyr::select(WB_NAME, ISO_A2, ISO_A3, ISO_N3, TYPE, REGION_WB) %>%
-  filter(TYPE != 'Dependency') %>%
-  st_make_valid()
-
-#Load the fishnet
-fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp'))
-
-fishnet.r = 
-  rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
+cur_continent = 'Africa'
+cur_continent_abr = 'AF'
+cur_continent_abr_UP = 'af'
 
 ##############################
 #HydroATLAS/BASIN data 
@@ -109,13 +61,21 @@ HYBAS_list =
   split(data_sub_DT, by = 'HYBAS_ID') 
 
 #Test - list number 27
-dist_threshold_km = 100 #Use 99999 for essentially no dist threshold
+dist_threshold_km = 200 #Use 99999 for essentially no dist threshold
 
 #Algorithm Description: For a given distance threshold, the algorithm aims to find all watersheds that are considered 'not upstream or downstream' 
 #of a given watershed. This involves finding all sub-watersheds within a certain distance, and then excluding watersheds that were previously 
 #estimated to be upstream in scrip 1.
 
 get_unConnected = function(df) {
+  
+  library(data.table)
+  library(tidyverse)
+  library(sf)
+  library(raster)
+  library(terra)
+  library(fasterize)
+  library(stringdist)
   
   #Get the main level 1 watershed ID/row
   #cur_ws_primary = data_sub_DT[i, ]
@@ -125,7 +85,7 @@ get_unConnected = function(df) {
   # If HYBAS_ID is equal to current WS -> upstream
   # If current WS is part of upstream chain of different watershed -> downstream
   connected_WS = 
-    upstream_HYBAS[upstream_chain == cur_ws_ID_primary]
+    upstream_HYBAS[upstream_chain == cur_ws_ID_primary | HYBAS_ID == cur_ws_ID_primary]
   
   #Find the watersheds that are within distance threshold
   within_dist = 
@@ -147,13 +107,60 @@ get_unConnected = function(df) {
 }
 
 
-#Run the process in parallel
-start = Sys.time()
-out_list <- pblapply(HYBAS_list, get_unConnected)
+#Run the process on a single thread
+# system.time({
+#   out_list <- pblapply(HYBAS_list[1:100], get_unConnected)
+# })
 #out_list <- parallel::mclapply(upstream_HYBAS_list[1:10000], summarize_upstream, mc.cores = 4)
-end = Sys.time()
 
-end - start
+#Set up environment for parallel processing (Windows)
+n.cores <- detectCores()
+cl <- makeCluster (n.cores)
+#Export environment
+clusterExport(cl=cl, c('data_sub_centroid', 'upstream_HYBAS', 'data_sub_DT', 'dist_threshold_km'))
 
+system.time({
+out_list <- parLapply(cl, HYBAS_list, fun = get_unConnected)
 #Merge the lists
 out_list_merged = rbindlist(out_list)
+
+saveRDS(out_list_merged, paste0(proj_dir, 'Unconnected/', 'unconnected_codes_', 
+                                cur_continent_abr, '.rds'))
+stopCluster (cl)
+
+})
+
+
+# #Trying the futureverse
+# plan(multisession)
+# 
+# system.time({
+# res2 = future_lapply(HYBAS_list[1:100], get_unConnected)
+# })
+
+
+########################################################
+#Checks
+
+
+test = readRDS(paste0(proj_dir, 'Unconnected/', 'unconnected_codes_', 
+                      'AS', '.rds'))
+
+#Get the size of upstream watersheds for each watershed
+out_df_mod =
+  upstream_HYBAS %>%
+  group_by(HYBAS_ID) %>%
+  summarise(group_size = n()) %>%
+  as.data.table()
+
+
+test = data_sub_centroid %>% filter(HYBAS_ID %in% out_list_merged[HYBAS_ID == 6120222160,]$unConnected)
+test2 = data_sub_centroid %>% filter(HYBAS_ID %in% upstream_HYBAS[HYBAS_ID == 6120222160,]$upstream_chain)
+
+st_write(test, paste0(proj_dir, 'Unconnected/', 'test.gpkg'), append=FALSE)
+st_write(test2, paste0(proj_dir, 'Unconnected/', 'test2.gpkg'), append=FALSE)
+
+
+test3 = data_sub_DT %>% filter(HYBAS_ID == 6120222160)
+
+########################################################
