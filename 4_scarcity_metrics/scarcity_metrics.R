@@ -92,18 +92,6 @@ ds1 =
   merge(date.seq, by.x = 'time', by.y = 'netcdf_time', all.x = T) %>%
   .[, cell_id := paste0(lat, lon)]
 
-
-withdrawal_based = F
-
-##########################################################################################
-#Transform PCR-GLOBWB data
-ds1_transform = pre_process_PCR_GLOBWB(ds1, withdrawal_based)
-
-
-#Checks
-check_raster = rasterFromXYZ(ds1_transform[,.(lon, lat, gwa_m_month)])
-plot(check_raster, zlim = c(0,1))
-
 ##########################################################################################
 #Convert to spatial object for:
 #(a) linking country codes; (b) getting cell areas to calculate volumes
@@ -209,7 +197,15 @@ df_crop =
   as.data.table()
 
 ##########################################################################################
-#Merge all
+#Estimate Scarcity
+
+withdrawal_based = T
+#Transform PCR-GLOBWB data
+ds1_transform = pre_process_PCR_GLOBWB(ds1, withdrawal_based)
+
+# #Checks
+# check_raster = rasterFromXYZ(ds1_transform[,.(lon, lat, gwa_m_month)])
+# plot(check_raster, zlim = c(0,1))
 
 ds_pixel_year = pixel_level_scarcity(ds1_transform, withdrawal_based = withdrawal_based)
 
@@ -221,7 +217,7 @@ ds_country_year = country_level_scarcity(ds_pixel_year, withdrawal_based = withd
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_CONSUMPTION_1981_2005.csv'))
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_WITHDRAWAL_1981_2005.csv'))
 
-fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_CONSUMPTION_allPixels_1981_2005.csv'))
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_CONSUMPTION_allPixels_1981_2005.csv'))
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_WITHDRAWAL_allPixels_1981_2005.csv'))
 
 
@@ -246,7 +242,7 @@ ds_all_sub =
   filter(year > 2000) %>%
   #filter(WB_NAME == 'India') 
   group_by(WB_NAME, ISO_A3) %>%
-  summarise(across(gws_monthly_aggregate:bws_year_country, ~median(.x, na.rm=T))) %>%
+  summarise(across(gws_monthly_aggregate:bws_area_scarce, ~median(.x, na.rm=T))) %>%
   as.data.table()
 # mutate(ratio_BW_WF = actual_water_consumed_m3_year/WF_Blue_Total_m3_year,
 #        ratio_GW_WF = gwa_m3_year/WF_Green_Total_m3_year) %>%
@@ -281,6 +277,14 @@ plot((ds_all_sub$gws_pixel_year), (ds_all_sub$bws_pixel_year),
      ylab = 'Blue Water Scarcity (option 3)', ylim = c(0,0.3),
      main = 'BWS vs GWS')
 #abline(coef = c(0,1))
+
+hist(ds_for_country$gws_area_scare, 
+     main = 'Proportion of Greenwater Scarce Area',  ylim = c(0,40),
+     ylab = 'Number of Countries', xlab = 'Proportion of greenwater scarce area')
+
+hist(ds_for_country$gws_year_country, 
+     main = 'Greenwater Scarcity (option 4)', 
+     ylab = 'Number of Countries', xlab = 'Greenwater Scarcity')
 
 ##########################################################################################
 #Estimate Rosa/Liu metrics

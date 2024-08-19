@@ -1,4 +1,4 @@
-
+##########################################################################################
 pre_process_PCR_GLOBWB = function(df, withdrawal_based){
   #Reference for unit conversion: https://www.researchgate.net/post/How-to-convert-cmip5-monthly-precipitation-kg-m2-s1-into-mm-month
   if(withdrawal_based == T) {
@@ -24,6 +24,7 @@ pre_process_PCR_GLOBWB = function(df, withdrawal_based){
   return(output)
 }
 
+##########################################################################################
 pixel_level_scarcity = function(df, withdrawal_based){
   print("0 - Kicking things off")
   if(withdrawal_based == T) {
@@ -80,12 +81,14 @@ pixel_level_scarcity = function(df, withdrawal_based){
       mutate(gws_pixel_year = (ETc_m3_year - gwa_m3_year)/ETc_m3_year, 
              bws_pixel_year = actual_water_withdrawal_m3_year/bwa_m3_year) %>%
       mutate(gws_pixel_year = ifelse(gws_pixel_year<0, 0, gws_pixel_year)) %>% #Incase the gwa exceeds ETc
+      mutate(gws_pixel_year_bin = ifelse(gws_pixel_year > 0.1, 1, 0), #Get the bin value using yearly pixel level scarcity metrics
+             bws_pixel_year_bin = ifelse(bws_pixel_year > 1, 1, 0)) %>%
       as.data.table() %>%
       filter(!is.na(WB_NAME)) %>%
       merge(df_crop, by = c('lon', 'lat'), all.x=T) #Add a cropland layer to remove low ag regions
     
     ##########
-    print("6 - Yearly scarcity calculated; crop layer merged")
+    print("6 - Yearly scarcity calculated (incl. binary); crop layer merged")
     ##########
     
   } else {
@@ -143,12 +146,14 @@ pixel_level_scarcity = function(df, withdrawal_based){
       mutate(gws_pixel_year = (ETc_m3_year - gwa_m3_year)/ETc_m3_year, 
              bws_pixel_year = actual_water_consumed_m3_year/bwa_m3_year) %>%
       mutate(gws_pixel_year = ifelse(gws_pixel_year<0, 0, gws_pixel_year)) %>% #Incase the gwa exceeds ETc
+      mutate(gws_pixel_year_bin = ifelse(gws_pixel_year > 0.1, 1, 0), #Get the bin value using yearly pixel level scarcity metrics
+             bws_pixel_year_bin = ifelse(bws_pixel_year > 1, 1, 0)) %>%
       as.data.table() %>%
       filter(!is.na(WB_NAME)) %>%
       merge(df_crop, by = c('lon', 'lat'), all.x=T) #Add a cropland layer to remove low ag regions
     
     ##########
-    print("6 - Yearly scarcity calculated; crop layer merged")
+    print("6 - Yearly scarcity calculated (incl. binary); crop layer merged")
     ##########
     
   }
@@ -156,6 +161,7 @@ pixel_level_scarcity = function(df, withdrawal_based){
   return(output)
 }
 
+##########################################################################################
 country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
   print("0 - Kicking things off")
   
@@ -181,7 +187,9 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
       output %>%
       group_by(year, WB_NAME, ISO_A3) %>%
       summarise(across(airrww_m3_year:actual_water_consumed_m3_year, ~ sum(.x, na.rm = T)),
-                across(gws_pixel_mean:bws_pixel_year, ~median(.x, na.rm = T), .names = "{.col}_median")) 
+                across(gws_pixel_mean:bws_pixel_year, ~median(.x, na.rm = T), .names = "{.col}_median"),
+                across(gws_pixel_year_bin:bws_pixel_year_bin, ~ sum(.x, na.rm = T)),
+                total_pixels = n()) 
     
     ##########
     print("2 - Pixel values aggregated to country-level")
@@ -190,22 +198,24 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
     output = 
       output %>%
       mutate(gws_year_country = (ETc_m3_year - gwa_m3_year)/ETc_m3_year, #Potential Irrigation Water Consumption to Potential Water Demands
-             bws_year_country = actual_water_withdrawal_m3_year/bwa_m3_year #Irrigation Water Consumption to Blue Water Availability
-      ) %>%
+             bws_year_country = actual_water_withdrawal_m3_year/bwa_m3_year, #Irrigation Water Consumption to Blue Water Availability
+             gws_area_country = gws_pixel_year_bin/total_pixels,
+             bws_area_country = bws_pixel_year_bin/total_pixels) %>%
       mutate(gws_year_country = ifelse(gws_year_country<0, 0, gws_year_country)) 
     
     ##########
-    print("3 - Country-level scarcity calculated")
+    print("3 - Country-level scarcity calculated (incl. binary)")
     ##########
     
     output = 
       output %>% #Incase the gwa exceeds ETc
       merge(WF_data, by = 'WB_NAME', all.x = T) %>%
       as.data.table() %>%
-      dplyr::select(year, WB_NAME, ISO_A3, gws_pixel_mean_median:bws_year_country) %>%
+      dplyr::select(year, WB_NAME, ISO_A3, gws_pixel_mean_median:bws_year_country, gws_area_country:bws_area_country) %>%
       dplyr::rename(gws_monthly_aggregate = gws_pixel_mean_median, bws_monthly_aggregate = bws_pixel_mean_median,
                     gws_monthly_binary = gws_pixel_bin_year_median, gws_monthly_binary = gws_pixel_bin_year_median,
-                    gws_pixel_year = gws_pixel_year_median, bws_pixel_year = bws_pixel_year_median) %>%
+                    gws_pixel_year = gws_pixel_year_median, bws_pixel_year = bws_pixel_year_median,
+                    gws_area_scare = gws_area_country, bws_area_scare = bws_area_country) %>%
       arrange(WB_NAME, year)
     
     ##########
@@ -217,7 +227,9 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
       output %>%
       group_by(year, WB_NAME, ISO_A3) %>%
       summarise(across(airrww_m3_year:actual_water_consumed_m3_year, ~ sum(.x, na.rm = T)),
-                across(gws_pixel_mean:bws_pixel_year, ~median(.x, na.rm = T), .names = "{.col}_median")) 
+                across(gws_pixel_mean:bws_pixel_year, ~median(.x, na.rm = T), .names = "{.col}_median"),
+                across(gws_pixel_year_bin:bws_pixel_year_bin, ~ sum(.x, na.rm = T)),
+                total_pixels = n()) 
     
     ##########
     print("2 - Pixel values aggregated to country-level")
@@ -226,22 +238,24 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
     output = 
       output %>%
       mutate(gws_year_country = (ETc_m3_year - gwa_m3_year)/ETc_m3_year, #Potential Irrigation Water Consumption to Potential Water Demands
-             bws_year_country = actual_water_consumed_m3_year/bwa_m3_year #Irrigation Water Consumption to Blue Water Availability
-      ) %>%
+             bws_year_country = actual_water_consumed_m3_year/bwa_m3_year, #Irrigation Water Consumption to Blue Water Availability
+             gws_area_country = gws_pixel_year_bin/total_pixels,
+             bws_area_country = bws_pixel_year_bin/total_pixels) %>%
       mutate(gws_year_country = ifelse(gws_year_country<0, 0, gws_year_country)) 
     
     ##########
-    print("3 - Country-level scarcity calculated")
+    print("3 - Country-level scarcity calculated (incl. binary)")
     ##########
     
     output = 
       output %>% #Incase the gwa exceeds ETc
       merge(WF_data, by = 'WB_NAME', all.x = T) %>%
       as.data.table() %>%
-      dplyr::select(year, WB_NAME, ISO_A3, gws_pixel_mean_median:bws_year_country) %>%
+      dplyr::select(year, WB_NAME, ISO_A3, gws_pixel_mean_median:bws_year_country, gws_area_country:bws_area_country) %>%
       dplyr::rename(gws_monthly_aggregate = gws_pixel_mean_median, bws_monthly_aggregate = bws_pixel_mean_median,
                     gws_monthly_binary = gws_pixel_bin_year_median, gws_monthly_binary = gws_pixel_bin_year_median,
-                    gws_pixel_year = gws_pixel_year_median, bws_pixel_year = bws_pixel_year_median) %>%
+                    gws_pixel_year = gws_pixel_year_median, bws_pixel_year = bws_pixel_year_median,
+                    gws_area_scarce = gws_area_country, bws_area_scarce = bws_area_country) %>%
       arrange(WB_NAME, year)
     
     ##########
@@ -252,3 +266,4 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
   return(output)
 }
 
+##########################################################################################
