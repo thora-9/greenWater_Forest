@@ -93,6 +93,11 @@ ds1 =
   .[, cell_id := paste0(lat, lon)]
 
 ##########################################################################################
+ds1 = readRDS(paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
+#saveRDS(ds1, paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
+
+
+##########################################################################################
 #Convert to spatial object for:
 #(a) linking country codes; (b) getting cell areas to calculate volumes
 
@@ -199,7 +204,7 @@ df_crop =
 ##########################################################################################
 #Estimate Scarcity
 
-withdrawal_based = T
+withdrawal_based = F
 #Transform PCR-GLOBWB data
 ds1_transform = pre_process_PCR_GLOBWB(ds1, withdrawal_based)
 
@@ -207,10 +212,11 @@ ds1_transform = pre_process_PCR_GLOBWB(ds1, withdrawal_based)
 # check_raster = rasterFromXYZ(ds1_transform[,.(lon, lat, gwa_m_month)])
 # plot(check_raster, zlim = c(0,1))
 
-ds_pixel_year = pixel_level_scarcity(ds1_transform, withdrawal_based = withdrawal_based)
+ds_pixel_year = pixel_level_scarcity(ds1_transform, withdrawal_based = withdrawal_based,
+                                     agg_func = 'median')
 
 ds_country_year = country_level_scarcity(ds_pixel_year, withdrawal_based = withdrawal_based,
-                                         cropland_threshold = F)
+                                         cropland_threshold = T)
 
 ###############
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_level_metrics_1981_2005.csv'))
@@ -218,8 +224,14 @@ ds_country_year = country_level_scarcity(ds_pixel_year, withdrawal_based = withd
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_WITHDRAWAL_1981_2005.csv'))
 
 #fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_CONSUMPTION_allPixels_1981_2005.csv'))
-#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/country_scarcity_metrics_WITHDRAWAL_allPixels_1981_2005.csv'))
 
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_WITHDRAWAL_CROP_MAX_1981_2005.csv'))
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_WITHDRAWAL_ALL_MAX_1981_2005.csv'))
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_CONSUMPTION_CROP_MAX_1981_2005.csv'))
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_CONSUMPTION_ALL_MAX_1981_2005.csv'))
+
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_WITHDRAWAL_CROP_MEDIAN_1981_2005.csv'))
+#fwrite(ds_country_year, paste0(proj_dir, 'scarcity_outputs/scarcity_CONSUMPTION_CROP_MEDIAN_1981_2005.csv'))
 
 #test = fread(paste0(proj_dir, 'scarcity_outputs/country_level_metrics_1981_2005.csv'))
 ##############
@@ -232,7 +244,8 @@ ds_for_raster =
 ds_for_country =
   ds_country_year %>%
   filter(year == 2005) %>%
-  filter(WB_NAME == 'India') 
+  mutate(bws_monthly_aggregate_1 = ifelse(bws_monthly_aggregate_1>5, 5, bws_monthly_aggregate_1))
+  #filter(WB_NAME == 'India') 
   # mutate(ratio_BW_WF = actual_water_consumed_m3_year/WF_Blue_Total_m3_year,
   #        ratio_GW_WF = gwa_m3_year/WF_Green_Total_m3_year) %>%
   #dplyr::select(WB_NAME, ratio_GW_WF)
@@ -248,7 +261,7 @@ ds_all_sub =
 #        ratio_GW_WF = gwa_m3_year/WF_Green_Total_m3_year) %>%
 #dplyr::select(WB_NAME, ratio_GW_WF)
 
-check_raster = rasterFromXYZ(ds_for_raster[,.(lon, lat, gws_pixel_year)])
+check_raster = rasterFromXYZ(ds_for_raster[,.(lon, lat, gws_pixel)])
 plot(check_raster, col = map.pal("viridis"), main = 'Green Water Scarcity',
      zlim = c(0.1,1))  
 
@@ -285,6 +298,22 @@ hist(ds_for_country$gws_area_scare,
 hist(ds_for_country$gws_year_country, 
      main = 'Greenwater Scarcity (option 4)', 
      ylab = 'Number of Countries', xlab = 'Greenwater Scarcity')
+
+
+plot((ds_for_country$gws_monthly_aggregate_1), (ds_for_country$bws_monthly_aggregate_1),
+     xlab = 'Green Water Scarcity (option 1 with Max)',
+     ylab = 'Blue Water Scarcity (option 1 with Max)', ylim = c(0,5),
+     main = 'BWS vs GWS')
+
+plot((ds_for_country$gws_area_atleast1_6), (ds_for_country$bws_area_atleast1_6),
+     xlab = 'Area with atleast 1 month GWS (option 6)',
+     ylab = 'Area with atleast 1 month BWS  (option 6)', ylim = c(0,1),
+     main = 'BWS vs GWS (option 6)')
+
+plot((ds_for_country$gws_area_scarce_5), (ds_for_country$bws_area_scarce_5),
+     xlab = 'Area with GWS (option 5)',
+     ylab = 'Area with BWS  (option 5)', ylim = c(0,1),
+     main = 'BWS vs GWS (option 5)')
 
 ##########################################################################################
 #Estimate Rosa/Liu metrics

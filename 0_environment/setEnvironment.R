@@ -2,6 +2,7 @@
 ##Set Environment
 #####################################
 
+library(tidytable)
 library(tidync)
 library(data.table)
 library(tidyverse)
@@ -22,7 +23,6 @@ library(modelr)
 library(haven)
 library(pbapply)
 library(parallel)
-
 
 #project code
 reportCode = "livable_planet"
