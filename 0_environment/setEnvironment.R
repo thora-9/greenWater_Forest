@@ -23,13 +23,13 @@ library(modelr)
 library(haven)
 library(pbapply)
 library(parallel)
+library(qgisprocess)
 
 #project code
 reportCode = "livable_planet"
 projCode = "greenwater_forests_biodiv"
 
 #paths
-machine = 'WB_VDM' #WB_VDM
 if(machine == 'WB_VDM'){
   proj_dir = paste0("C:\\Users\\wb583485\\Documents\\WB\\", reportCode, "\\",
                     projCode, "\\")
@@ -51,7 +51,7 @@ per_na = function(x){
 ##############################
 #Load the fishnet
 fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp'))
+  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet_fixed.gpkg'))
 
 fishnet.r = 
   rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))

@@ -2,65 +2,15 @@
 ##Estimate indices for each basin (HydroATLAS/BASIN)
 #########################################################
 
-library(tidync)
-library(data.table)
-library(tidyverse)
-library(lubridate)
-library(zyp)
-library(sf)
-library(raster)
-library(terra)
-library(RColorBrewer)
-library(rasterVis)
-library(xts)
-library(fasterize)
-library(stringdist)
-library(fuzzyjoin)
-library(stars)
-library(tidyterra)
-library(modelr)
-library(haven)
-library(pbapply)
+machine = '' #WB_VDM
 
-
-#paths
-machine = 'local'
-if(machine == 'gcp'){
-  proj_dir = "/home/thora/Projects/greenWater_Forest/"
-  database = "/home/thora/Database/"
-} else{
-  proj_dir = "~/Dropbox/WB/greenWater_Forest/"
-  database = "~/Dropbox/Database/"
-}
-
-
-#Custom function
-per_na = function(x){
-  out = apply(x, MARGIN = 2, FUN = function(x){round(sum(is.na(x))*100/length(x), 2)})
-  return(out)
-}
-
+source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'Asia'
-cur_continent_abr = 'AS'
-cur_continent_abr_UP = 'as'
-
-##############################
-####Load World Regions
-wb_regions = 
-  st_read(paste0(database, "Admin/WB_Regions/WB_countries_Admin0_10m.shp")) %>%
-  dplyr::select(WB_NAME, ISO_A2, ISO_A3, ISO_N3, TYPE, REGION_WB) %>%
-  filter(TYPE != 'Dependency') %>%
-  st_make_valid()
-
-#Load the fishnet
-fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp'))
-
-fishnet.r = 
-  rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
-
+cur_continent = 'South America'
+cur_continent_abr = 'SA'
+cur_continent_abr_UP = 'sa'
+cur_run = 'unconnected'
 ##############################
 #HydroATLAS/BASIN data 
 
@@ -105,11 +55,6 @@ data_sub =
 #To free memory
 rm(data_in)
 
-#Load the upstream-HYBAS linkage
-#This was calculated in step 1 of the workflow
-path2upstream = paste0(proj_dir, 'Upstream/', cur_continent, '/')
-upstream_HYBAS = readRDS(paste0(path2upstream, 'upstream_codes_',cur_continent_abr_UP, '_wdis.rds'))
-
 #Load the data to be estimated
 ##############################
 #Forest Fragmentation Data 
@@ -122,6 +67,8 @@ data_in2 =
   rast(paste0(database, "Forestry/forest_fragmentation_Ma_2023/FFI2020.tif")) %>%
   terra::project(crs(fishnet.r), method = 'bilinear') %>% #Use bilinear as the variable is continuous
   terra::resample(data_in1, method = 'bilinear') 
+
+reference_raster = fasterize(fishnet, data_in1 %>% raster) %>% rast
 
 ##############################
 #Forest Management Data 
@@ -188,7 +135,7 @@ data_BHI1 =
 
 data_BHI2 = 
   rast(paste0(path2data, "BILBI_P_BHIv2_Species_2020.tif")) %>%
-  terra::resample(data_in1, method = 'med')
+  terra::resample(data_in1, method = 'bilinear')
 
 data_BHI = c(data_BHI1, data_BHI2)
 
@@ -201,7 +148,7 @@ path2data = paste0(database, "Forestry/forest_age_Besnard_2021/")
 data_forestAge = 
   rast(paste0(path2data, "202437221216222_BGIForestAgeMPIBGC1.0.0.nc")) %>%
   .[[c(1,3)]] %>% #Select the 20% threshold and no threshold case
-  terra::resample(data_in1, method = 'med')
+  terra::resample(data_in1, method = 'bilinear')
 
 ##############################
 #IUCN Species Richness
@@ -240,9 +187,65 @@ path2data = paste0(database, "Biodiversity/Intactness/BII_Newbold_2016/")
 
 data_BII = 
   rast(paste0(path2data, "lbii.asc")) %>%
-  terra::resample(data_in1, method = 'med')
+  terra::resample(data_in1, method = 'bilinear')
 
 names(data_BII) = 'BII'
+
+##############################
+#Tree Species Richness
+path2data = paste0(database, "Biodiversity/Richness/Tree_Species_Richness_Liang_2022/")
+
+data_TSR = 
+  rast(paste0(path2data, "S_mean_raster.tif")) %>%
+  terra::resample(data_in1, method = 'bilinear')
+
+names(data_TSR) = 'Tree_Species'
+
+##############################
+#Habitat Extent
+path2data = paste0(database, "LULC/Habitat_Jung_2020/")
+
+#Habitat layers 
+layer_list = 
+  list.files(paste0(database, "LULC/Habitat_Jung_2020/"), ".tif$",
+             full.names = T)
+
+habitat_layers = 
+  rast(layer_list) 
+
+habitat_extent = sum(habitat_layers[[c(1,3:8)]], na.rm = T)
+
+data_habitat = 
+  c(habitat_layers, habitat_extent) %>%
+  terra::resample(data_in1, method = 'bilinear')
+
+data_habitat = data_habitat/1000
+
+names(data_habitat) = c("Forests","Artificial",
+                                  "Savanna", "Shrubland",
+                                  "Grassland","Wetland_Inland",
+                                  "Rocky Areas", "Desert", "Habitat_Extent")
+
+data_habitat = 
+  ifel(is.na(data_habitat), 0, data_habitat) %>%
+  mask(reference_raster)
+
+##########################################################################################
+#Load the upstream-HYBAS/unconnected linkage
+#This was calculated in step 1 of the workflow
+
+if(cur_run == 'unconnected'){
+  path2linkage = paste0(proj_dir, 'Unconnected/', cur_continent, '/')
+  linkage_HYBAS = 
+    readRDS(paste0(path2linkage, 'unconnected_codes_',cur_continent_abr, '.rds')) %>%
+    tidytable::rename(chain = 2)
+  
+} else{
+  path2linkage = paste0(proj_dir, 'Upstream/', cur_continent, '/')
+  linkage_HYBAS = 
+    readRDS(paste0(path2linkage, 'upstream_codes_',cur_continent_abr_UP, '_wdis.rds')) %>%
+    tidytable::rename(chain = 2)
+}
 
 ##############################
 #Create a spatvector version of the vector HYBAS file  
@@ -254,7 +257,7 @@ data_sub_sv =
 #Variables summarized by mean
 #Create a raster stack with all the indices
 data_in_mean = 
-  c(data_in1, data_in2, data_BHI, data_forestAge, data_richness, data_BII) 
+  c(data_in1, data_in2, data_BHI, data_forestAge, data_richness, data_BII, data_TSR, data_habitat) 
 
 #Variables summarized by mode (categorical var)
 data_in_mode = 
@@ -267,7 +270,7 @@ data_in_count =
 ##############################
 #Extract the values 
 var_HYBAS_mean = 
-  terra::extract(data_in_mean, data_sub_sv, fun = 'mean', na.rm=TRUE, bind = TRUE) %>%
+  terra::extract(data_in_mean, data_sub_sv, fun = 'median', na.rm=TRUE, bind = TRUE) %>%
   as.data.table()
 
 var_HYBAS_mode = 
@@ -291,7 +294,7 @@ upstream_HYBAS_list =
   split(data_sub_DT, by = 'HYBAS_ID') 
 
 #Test - list number 27
-dist_threshold_km = 200 #Use 99999 for essentially no dist threshold
+dist_threshold_km = 100 #Use 99999 for essentially no dist threshold
 
 
 #Function to get the centroid distances
@@ -299,16 +302,21 @@ summarize_upstream <- function(df) {
   
   #Subset the upstream linkage to the given watershed
   cur_upstream_HYBAS = 
-    upstream_HYBAS[HYBAS_ID == df$HYBAS_ID] %>%
-    dplyr::filter(distance < dist_threshold_km)
+    linkage_HYBAS[HYBAS_ID == df$HYBAS_ID]
+  
+  if(cur_run != 'unconnected') {
+    cur_upstream_HYBAS = 
+      cur_upstream_HYBAS %>%
+      dplyr::filter(distance < dist_threshold_km)
+  }
   
   #Summarise variables 
   cur_var_upstream = 
-    var_HYBAS_all[HYBAS_ID %in% cur_upstream_HYBAS$upstream_chain] %>%
-    summarise(across(FFI2000:BII, ~ mean(.x, na.rm = T)),
-              across(FM_class_mode, ~ modal(.x, na.rm = T)),
-              across(natural_only:total_cells, ~ sum(.x, na.rm = T))) %>%
-    mutate(upstream_total = length(unique(cur_upstream_HYBAS$upstream_chain)))
+    var_HYBAS_all[HYBAS_ID %in% cur_upstream_HYBAS$chain] %>%
+    tidytable::summarise(across(FFI2000:Habitat_Extent, ~ mean(.x, na.rm = T)),
+                         across(FM_class_mode, ~ modal(.x, na.rm = T)),
+                         across(natural_only:total_cells, ~ sum(.x, na.rm = T))) %>%
+    tidytable::mutate(ws_total = length(unique(cur_upstream_HYBAS$chain)))
   
   #Store the output for the current watershed
   out_df = 
@@ -337,15 +345,21 @@ out_list_merged = rbindlist(out_list)
 
 
 #Save the summarized output
-
-if(dist_threshold_km == 99999){
-  saveRDS(out_list_merged, paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_nodist.rds'))
-} else if (dist_threshold_km == 200){
-  saveRDS(out_list_merged, paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_w200km.rds'))
+if(cur_run == 'unconnected'){
+  saveRDS(out_list_merged, paste0(path2linkage, '240821/','unconnected_VAR_', cur_continent_abr_UP,'.rds'))
+  
+} else {
+  if(dist_threshold_km == 99999){
+    saveRDS(out_list_merged, paste0(path2linkage, '240821/','upstream_VAR_', cur_continent_abr_UP, '_nodist.rds'))
+  } else if (dist_threshold_km == 100){
+    saveRDS(out_list_merged, paste0(path2linkage, '240821/', 'upstream_VAR_', cur_continent_abr_UP, '_w100km.rds'))
+  }
 }
 
 
+# 
+# 
+test = readRDS(paste0(path2linkage, '240821/','unconnected_VAR_', cur_continent_abr_UP,'.rds'))
+test2 = readRDS(paste0('/Users/tejasvi/Dropbox/WB/livable_planet/greenwater_forests_biodiv/Upstream/South America/',
+                       '240821/','upstream_VAR_sa_w100km','.rds'))
 
-
-test = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_set2_SA.rds'))
-test2 = readRDS(paste0(proj_dir, 'Upstream/upstream_VAR_SA_w200km.rds'))

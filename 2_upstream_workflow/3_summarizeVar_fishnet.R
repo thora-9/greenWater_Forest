@@ -2,71 +2,28 @@
 ##Estimate indices for each basin (HydroATLAS/BASIN)
 #########################################################
 
-library(tidync)
-library(data.table)
-library(tidyverse)
-library(lubridate)
-library(zyp)
-library(sf)
-library(raster)
-library(terra)
-library(RColorBrewer)
-library(rasterVis)
-library(xts)
-library(fasterize)
-library(stringdist)
-library(fuzzyjoin)
-library(stars)
-library(tidyterra)
-library(modelr)
-library(haven)
-library(qgisprocess)
+machine = '' #WB_VDM
 
-
-#paths
-machine = 'local'
-if(machine == 'gcp'){
-  proj_dir = "/home/thora/Projects/greenWater_Forest/"
-  database = "/home/thora/Database/"
-} else{
-  proj_dir = "~/Dropbox/WB/greenWater_Forest/"
-  database = "~/Dropbox/Database/"
-}
-
-
-#Custom function
-per_na = function(x){
-  out = apply(x, MARGIN = 2, FUN = function(x){round(sum(is.na(x))*100/length(x), 2)})
-  return(out)
-}
+source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'Australasia'
-cur_continent_abr = 'AU'
-cur_continent_abr_UP = 'au'
-dist_threshold = 'w200km' #nodist #w200km
+cur_continent = 'South America'
+cur_continent_abr = 'SA'
+cur_continent_abr_UP = 'sa'
+cur_folder_name = '240821'
+cur_run = 'unconnected'
 
 ##############################
-####Load World Regions
-wb_regions = 
-  st_read(paste0(database, "Admin/WB_Regions/WB_countries_Admin0_10m.shp")) %>%
-  dplyr::select(WB_NAME, ISO_A2, ISO_A3, ISO_N3, TYPE, REGION_WB) %>%
-  filter(TYPE != 'Dependency') %>%
-  st_make_valid()
+#Fix the fishnet
 
-#Load the fishnet
-fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp')) 
-
-#Run the fix geometry algorith
-data_fixed_geom <- qgis_run_algorithm(
-  "native:fixgeometries",
-  INPUT = fishnet)
-
-fishnet = st_read(qgis_extract_output(data_fixed_geom, "OUTPUT"))
-
-fishnet.r = 
-  rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
+# #Run the fix geometry algorith
+# data_fixed_geom <- qgis_run_algorithm(
+#   "native:fixgeometries",
+#   INPUT = fishnet)
+# 
+# fishnet = st_read(qgis_extract_output(data_fixed_geom, "OUTPUT"))
+# 
+# st_write(fishnet, paste0("/Users/tejasvi/Dropbox/Database/Fishnet_halfdegree/global_fishnet_fixed.gpkg"))
 
 ##############################
 #HydroATLAS/BASIN data 
@@ -109,20 +66,8 @@ data_sub =
 #To free memory
 rm(data_in)
 
-######
-######Load here after changing distance threshold######
-######
-
-#Load the upstream-HYBAS summarized linkage
-path2upstream = paste0(proj_dir, 'Upstream/', cur_continent, '/')
-
-upstream_summarized_HYBAS = 
-  readRDS(paste0(path2upstream, 'upstream_VAR_', cur_continent_abr_UP, '_', dist_threshold, '.rds')) %>%
-  mutate(across(natural_only:total_cells, ~ .x/total_cells))
-
 
 ##############################
-
 #Find the centroid of each HYBAS polygon
 data_sub_centroid = 
   data_sub %>% 
@@ -143,11 +88,33 @@ qgis_join =
 
 data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
+##########################################
+######Load here after changing distance threshold######
+dist_threshold = 'nodist' #nodist #w100km
+##########################################
+##########################################
+#Load the summarized output
+
+if(cur_run == 'unconnected'){
+  path2linkage = paste0(proj_dir, 'Unconnected/', cur_continent,'/', cur_folder_name, '/')
+  summarized_HYBAS = 
+    readRDS(paste0(path2linkage, 'unconnected_VAR_',cur_continent_abr_UP, '.rds')) %>%
+    mutate(across(natural_only:agroforestry, ~ .x/total_cells))
+  
+} else{
+  path2linkage = paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name, '/')
+  summarized_HYBAS = 
+    readRDS(paste0(path2linkage, 'upstream_VAR_',cur_continent_abr_UP, '_', dist_threshold, '.rds')) %>%
+    mutate(across(natural_only:agroforestry, ~ .x/total_cells))
+}
+
 ##############################
 #Create a list of variables to summarize
 var_mean = c("FFI2000", "FFI2020", "BHI_2010", "BHI_2020", "ForestAge_TC000", 
              "ForestAge_TC020", "Combined_SR_2022", "Amphibians_SR_2022", "Birds_SR_2022",
-             "Mammals_SR_2022", "Reptiles_SR_2022", "BII")
+             "Mammals_SR_2022", "Reptiles_SR_2022", "BII", "Tree_Species", "Forests", 
+             "Artificial", "Savanna", "Shrubland", "Grassland","Wetland_Inland", "Rocky.Areas", "Desert",
+             "Habitat_Extent")
 var_mode = c("FM_class_mode")
 var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agroforestry")
 
@@ -155,14 +122,14 @@ var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agro
 
 #Subset the variables, merge the fishnet id, summarize after grouping by fishnet id
 data_in_summarized_v1 = 
-  upstream_summarized_HYBAS %>%
+  summarized_HYBAS %>%
   #dplyr::select(1, all_of(all_variables)) %>%
   mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
   merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
   #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
   arrange(desc(upstream_total)) %>% 
   group_by(Id) %>%
-  summarise(across(all_of(var_mean[var_mean %in% colnames(upstream_summarized_HYBAS)]), ~ mean(.x, na.rm = TRUE)),
+  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
             across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
             across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
   as.data.table()
@@ -171,7 +138,7 @@ data_in_summarized_v1 =
 
 #Subset the variables, merge the fishnet id, summarize after grouping by fishnet id
 data_in_summarized_v2 = 
-  upstream_summarized_HYBAS %>%
+  summarized_HYBAS %>%
   #dplyr::select(1, all_of(all_variables)) %>%
   mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
   merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
@@ -179,7 +146,7 @@ data_in_summarized_v2 =
   arrange(desc(upstream_total)) %>% 
   group_by(Id) %>%
   slice(1:5) %>%
-  summarise(across(all_of(var_mean[var_mean %in% colnames(upstream_summarized_HYBAS)]), ~ mean(.x, na.rm = TRUE)),
+  summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
             across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
             across(all_of(var_count), ~ mean(.x, na.rm = TRUE))) %>% 
   as.data.table()
@@ -201,12 +168,14 @@ out_fish_v2 =
 #############################
 #Tests: Create rasters and visualize output
 out_fish_r = 
-  fasterize(out_fish_v1, fishnet.r %>% raster, field = "BHI_2020") %>%
-  crop(data_sub)
+  fasterize(out_fish_v1, fishnet.r %>% raster, field = "Forests") %>%
+  crop(data_sub) %>%
+  plot()
 
 out_fish_r2 =
-  fasterize(out_fish_v2, fishnet.r %>% raster, field = "BHI_2020") %>%
-  crop(data_sub)
+  fasterize(out_fish_v2, fishnet.r %>% raster, field = "Forests") %>%
+  crop(data_sub) %>%
+  plot()
 
 #############################
 #Create the final DF for export
@@ -226,27 +195,50 @@ out_fish_df_v2 =
 
 #Save the summarized output
 
-fwrite(out_fish_df_v1, 
-       paste0(path2upstream, 'upstream_', cur_continent_abr_UP, '_allWS_', dist_threshold, 
-              '_240407.csv'))
+#Save the summarized output
+if(cur_run == 'unconnected'){
+  path2output= paste0(proj_dir, 'Unconnected/', cur_continent, '/', cur_folder_name,'/')
+  fwrite(out_fish_df_v1, paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_allWS', 
+                                 '.csv'))
+  
+  fwrite(out_fish_df_v2, paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_top5up', 
+                                 '.csv'))
+  
+} else {
+  path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+  fwrite(out_fish_df_v1, paste0(path2output, 'upstream_', cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+  
+  fwrite(out_fish_df_v2, paste0(path2output, 'upstream_', cur_continent_abr_UP, '_top5up_', 
+                                 dist_threshold, '.csv'))
+}
 
-fwrite(out_fish_df_v1, 
-       paste0(path2upstream, 'upstream_', cur_continent_abr_UP, '_top5up_', dist_threshold, 
-              '_240407.csv'))
 
 
 #writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)
 
 #writeRaster(out_fish_r2, paste0(proj_dir, 'Upstream/test3.tif'), overwrite=TRUE)
-
+path2output= paste0(proj_dir, 'Unconnected/', cur_continent, '/', cur_folder_name,'/')
 test = 
-  rast(paste0(database, "Forestry/forest_fragmentation_Ma_2023/FFI2000.tif")) %>%
-  terra::project(crs(fishnet.r), method = 'bilinear')  %>% #Use bilinear as the variable is continuous
-  crop(out_fish)
+  fread(paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_allWS','.csv'))
 
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+dist_threshold = 'w100km' #nodist #w100km
 test2 = 
-  fread(paste0(database, "Forestry/forest_fragmentation_Ma_2023/forest_frag_05_v2.csv")) %>%
-  as.data.frame() 
+  fread(paste0(path2output, 'upstream_', cur_continent_abr_UP, '_allWS_', 
+                 dist_threshold, '.csv'))
+
+
+test_all = 
+  merge(test, test2, by = c('Lat', 'Lon'), all.x = T)
+
+plot(test_all$ForestAge_TC000.x, test_all$ForestAge_TC000.y, 
+     xlab = 'Forest Age - unconnected', ylab = 'Forest Age - upstream',
+     main = 'Forest Age - unconnected vs upstream')
+
+plot(test_all$FFI2000.x, test_all$FFI2000.y, 
+     xlab = 'Forest Fragmentation - unconnected', ylab = 'Forest Fragmentation - upstream',
+     main = 'Forest Fragmentation in 2000 - unconnected vs upstream')
 
 test2 = rasterFromXYZ(test2[c("x", "y", "FFI2020_med")], crs=4326) 
 writeRaster(test2, paste0(proj_dir, 'Upstream/test2.tif'))
