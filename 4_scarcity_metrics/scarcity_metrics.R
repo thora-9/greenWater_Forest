@@ -57,45 +57,52 @@ wb_regions_raster =
 
 ##########################################################################################
 #ISIMIP data
+reprocess_ISIMIP = F
 
 month_day = data.frame(month = c(1,2,3,4,5,6,7,8,9,10,11,12),
                        days = c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31))
 
-ds1 = 
-  tidync(paste0(path2data, 'merged_all.nc4')) %>%
-  hyper_tibble() %>% as.data.table() 
-
-#Create a date sequence
-date.seq = 
-  seq(as.Date("1981/1/1"), as.Date("2005/12/30"), "month") %>%
-  as.data.table() %>%
-  rownames_to_column() %>%
-  .[, rowname := as.integer(rowname)]
-colnames(date.seq) = c('rowname', 'date')
-
-#Get the times from the netCDF
-netcdf_time = sort(unique(ds1$time))
-
-#Not ideal - but cbind the netcdf_time to actual datetime
-date.seq = 
-  date.seq %>%
-  mutate(yearmon = substr(date, 1, 7),
-         year = as.numeric(substr(date, 1, 4)),
-         month = as.numeric(substr(date, 6, 7))) %>%
-  merge(month_day, by = 'month') %>%
-  arrange(rowname) %>% 
-  mutate(netcdf_time = netcdf_time)
-
-#Merge the dates using the rowname column
-ds1 = 
-  ds1 %>%
-  merge(date.seq, by.x = 'time', by.y = 'netcdf_time', all.x = T) %>%
-  .[, cell_id := paste0(lat, lon)]
+if(reprocess_ISIMIP == T){
+  
+  ds1 = 
+    tidync(paste0(path2data, 'merged_all.nc4')) %>%
+    hyper_tibble() %>% as.data.table() 
+  
+  #Create a date sequence
+  date.seq = 
+    seq(as.Date("1981/1/1"), as.Date("2005/12/30"), "month") %>%
+    as.data.table() %>%
+    rownames_to_column() %>%
+    .[, rowname := as.integer(rowname)]
+  colnames(date.seq) = c('rowname', 'date')
+  
+  #Get the times from the netCDF
+  netcdf_time = sort(unique(ds1$time))
+  
+  #Not ideal - but cbind the netcdf_time to actual datetime
+  date.seq = 
+    date.seq %>%
+    mutate(yearmon = substr(date, 1, 7),
+           year = as.numeric(substr(date, 1, 4)),
+           month = as.numeric(substr(date, 6, 7))) %>%
+    merge(month_day, by = 'month') %>%
+    arrange(rowname) %>% 
+    mutate(netcdf_time = netcdf_time)
+  
+  #Merge the dates using the rowname column
+  ds1 = 
+    ds1 %>%
+    merge(date.seq, by.x = 'time', by.y = 'netcdf_time', all.x = T) %>%
+    .[, cell_id := paste0(lat, lon)]
+}
 
 ##########################################################################################
 ds1 = readRDS(paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
 #saveRDS(ds1, paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
 
+withdrawal_based = F
+#Transform PCR-GLOBWB data
+ds1_transform = pre_process_PCR_GLOBWB(ds1, withdrawal_based)
 
 ##########################################################################################
 #Convert to spatial object for:
@@ -162,6 +169,40 @@ ds2_transform =
 #Checks
 #check_raster = rasterFromXYZ(ds2_transform[,.(lon, lat, ETc_m3_year/10^9)])
 #plot(check_raster)
+
+##########################################################################################
+#Water Scarcity - Mekonnen and Hoekstra (2016)
+####
+path2Mek = paste0(database, 'WaterManagement/Water_Scarcity_Mekonnen_2016/WS_blue_monthly/')
+
+Mek_data = 
+  list.files(path2Mek, '1.adf$', recursive = T, full.names = T) %>%
+  rast %>%
+  terra::resample(ref_raster)
+
+names(Mek_data) = c('ws_ave', 'ws_01', 'ws_02', 'ws_03', 'ws_04', 'ws_05', 'ws_06', 
+                    'ws_07', 'ws_08', 'ws_09', 'ws_10', 'ws_11', 'ws_12')
+
+#Convert to dataframe
+df_Mek =
+  as.data.frame(Mek_data, xy = T) %>%
+  dplyr::rename(lon = x, lat = y) %>%
+  as.data.table()
+
+df_Mek_country = 
+  df_Mek %>%
+  merge(ref_raster_df, by = c('lon', 'lat'), all.x=T) %>%
+  tidytable::mutate(ws_ave_bin = ifelse(ws_ave >= 1, 1, 0), #Get pixels with atleast 1 month of scarcity
+                    ws_ave_bin = ifelse(ws_ave >= 1, 1, 0)) %>%
+  tidytable::group_by(WB_NAME, ISO_A3) %>%
+  tidytable::summarise(ws_median_1 = median(ws_ave, na.rm = T),
+                       ws_ave_bin = sum(ws_ave_bin, na.rm = T),
+                       total_pixels = n()) %>%
+  tidytable::mutate(ws_prop_6 = ws_ave_bin/total_pixels) %>%
+  drop_na()
+
+#fwrite(df_Mek, paste0(database, 'WaterManagement/Water_Scarcity_Mekonnen_2016/processed/', 'bws_Mekonnen_05deg.csv'))
+#fwrite(df_Mek_country, paste0(database, 'WaterManagement/Water_Scarcity_Mekonnen_2016/processed/', 'bws_Mekonnen_country.csv'))
 
 ##########################################################################################
 #Water Footprint Data (Hoekstra)

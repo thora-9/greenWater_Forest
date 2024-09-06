@@ -7,9 +7,9 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'South America'
-cur_continent_abr = 'SA'
-cur_continent_abr_UP = 'sa'
+cur_continent = 'Asia'
+cur_continent_abr = 'AS'
+cur_continent_abr_UP = 'as'
 cur_run = 'unconnected'
 ##############################
 #HydroATLAS/BASIN data 
@@ -294,7 +294,7 @@ upstream_HYBAS_list =
   split(data_sub_DT, by = 'HYBAS_ID') 
 
 #Test - list number 27
-dist_threshold_km = 100 #Use 99999 for essentially no dist threshold
+dist_threshold_km = 99999 #Use 99999 for essentially no dist threshold
 
 
 #Function to get the centroid distances

@@ -7,11 +7,11 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'South America'
-cur_continent_abr = 'SA'
-cur_continent_abr_UP = 'sa'
+cur_continent = 'Asia'
+cur_continent_abr = 'AS'
+cur_continent_abr_UP = 'as'
 cur_folder_name = '240821'
-cur_run = 'unconnected'
+cur_run = 'upstream' #'unconnected'
 
 ##############################
 #Fix the fishnet
@@ -90,7 +90,7 @@ data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
 ##########################################
 ######Load here after changing distance threshold######
-dist_threshold = 'nodist' #nodist #w100km
+dist_threshold = 'w100km' #nodist #w100km
 ##########################################
 ##########################################
 #Load the summarized output
@@ -124,10 +124,10 @@ var_count = c("natural_only", "natural_managed", "natural_all", "planted", "agro
 data_in_summarized_v1 = 
   summarized_HYBAS %>%
   #dplyr::select(1, all_of(all_variables)) %>%
-  mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
+  mutate(across(FFI2000:ws_total, ~ ifelse(.x == -999, NA, .x))) %>%
   merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
   #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
-  arrange(desc(upstream_total)) %>% 
+  arrange(desc(ws_total)) %>% 
   group_by(Id) %>%
   summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
             across(all_of(var_mode), ~ modal(.x, na.rm = TRUE)),
@@ -140,10 +140,10 @@ data_in_summarized_v1 =
 data_in_summarized_v2 = 
   summarized_HYBAS %>%
   #dplyr::select(1, all_of(all_variables)) %>%
-  mutate(across(FFI2000:upstream_total, ~ ifelse(.x == -999, NA, .x))) %>%
+  mutate(across(FFI2000:ws_total, ~ ifelse(.x == -999, NA, .x))) %>%
   merge(data_merged_fishnet[, c("HYBAS_ID", "Id")], by = 'HYBAS_ID') %>%
   #merge(upstream_HYBAS, by = "HYBAS_ID", all.x = T) %>%
-  arrange(desc(upstream_total)) %>% 
+  arrange(desc(ws_total)) %>% 
   group_by(Id) %>%
   slice(1:5) %>%
   summarise(across(all_of(var_mean), ~ mean(.x, na.rm = TRUE)),
