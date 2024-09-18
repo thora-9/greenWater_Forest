@@ -7,10 +7,10 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'Asia'
-cur_continent_abr = 'AS'
-cur_continent_abr_UP = 'as'
-cur_run = 'unconnected'
+cur_continent = 'Australasia'
+cur_continent_abr = 'AU'
+cur_continent_abr_UP = 'au'
+cur_run = 'unconnected' #unconnected #upstream
 ##############################
 #HydroATLAS/BASIN data 
 
@@ -230,23 +230,6 @@ data_habitat =
   ifel(is.na(data_habitat), 0, data_habitat) %>%
   mask(reference_raster)
 
-##########################################################################################
-#Load the upstream-HYBAS/unconnected linkage
-#This was calculated in step 1 of the workflow
-
-if(cur_run == 'unconnected'){
-  path2linkage = paste0(proj_dir, 'Unconnected/', cur_continent, '/')
-  linkage_HYBAS = 
-    readRDS(paste0(path2linkage, 'unconnected_codes_',cur_continent_abr, '.rds')) %>%
-    tidytable::rename(chain = 2)
-  
-} else{
-  path2linkage = paste0(proj_dir, 'Upstream/', cur_continent, '/')
-  linkage_HYBAS = 
-    readRDS(paste0(path2linkage, 'upstream_codes_',cur_continent_abr_UP, '_wdis.rds')) %>%
-    tidytable::rename(chain = 2)
-}
-
 ##############################
 #Create a spatvector version of the vector HYBAS file  
 data_sub_sv = 
@@ -285,6 +268,22 @@ var_HYBAS_all =
   list(var_HYBAS_mean, var_HYBAS_mode, var_HYBAS_count) %>%
   reduce(full_join, by='HYBAS_ID')
 
+##########################################################################################
+#Load the upstream-HYBAS/unconnected linkage
+#This was calculated in step 1 of the workflow
+
+if(cur_run == 'unconnected'){
+  path2linkage = paste0(proj_dir, 'Unconnected/', cur_continent, '/')
+  linkage_HYBAS = 
+    readRDS(paste0(path2linkage, 'unconnected_codes_',cur_continent_abr, '.rds')) %>%
+    tidytable::rename(chain = 2)
+  
+} else{
+  path2linkage = paste0(proj_dir, 'Upstream/', cur_continent, '/')
+  linkage_HYBAS = 
+    readRDS(paste0(path2linkage, 'upstream_codes_',cur_continent_abr_UP, '_wdis.rds')) %>%
+    tidytable::rename(chain = 2)
+}
 
 ##############################
 #Estimate the index for upstream regions

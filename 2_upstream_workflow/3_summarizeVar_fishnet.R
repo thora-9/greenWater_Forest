@@ -7,11 +7,11 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'Asia'
-cur_continent_abr = 'AS'
-cur_continent_abr_UP = 'as'
+cur_continent = 'Australasia'
+cur_continent_abr = 'AU'
+cur_continent_abr_UP = 'au'
 cur_folder_name = '240821'
-cur_run = 'upstream' #'unconnected'
+cur_run = 'unconnected' #unconnected #upstream
 
 ##############################
 #Fix the fishnet
@@ -90,7 +90,7 @@ data_merged_fishnet = st_read(qgis_extract_output(qgis_join, "OUTPUT"))
 
 ##########################################
 ######Load here after changing distance threshold######
-dist_threshold = 'w100km' #nodist #w100km
+dist_threshold = 'nodist' #nodist #w100km
 ##########################################
 ##########################################
 #Load the summarized output
@@ -201,8 +201,8 @@ if(cur_run == 'unconnected'){
   fwrite(out_fish_df_v1, paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_allWS', 
                                  '.csv'))
   
-  fwrite(out_fish_df_v2, paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_top5up', 
-                                 '.csv'))
+  # fwrite(out_fish_df_v2, paste0(path2output, 'unconnected_', cur_continent_abr_UP, '_top5up', 
+  #                                '.csv'))
   
 } else {
   path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
