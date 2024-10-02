@@ -7,10 +7,9 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'South America'
-cur_continent_abr = 'SA'
-cur_continent_abr_UP = 'sa'
-cur_run = 'unconnected' #unconnected #upstream
+cur_continent = 'Australasia'
+cur_continent_abr = 'AU'
+cur_continent_abr_UP = 'au'
 
 ##############################
 #Continent-level
@@ -224,52 +223,3 @@ neighbour_upstream = data_sub %>% filter(HYBAS_ID %in% upstream_cur_cell_vec$HYB
 st_write(neighbour_upstream, paste0(path2output, 'neighbour_upstream.gpkg'))
 
 i = 2550 #1440 good number
-
-
-
-#Select the cell under consideration
-cur_cell = focal_neighbours$Center[i]
-cur_neighbours = focal_neighbours[i, 2:9] %>% as.numeric()
-#Find all watersheds that are within that cell
-ws_within_cur_cell = data_merged_fishnet %>% filter(cellnumber == cur_cell)
-#Find all the upstream watersheds to the watershed within that cell
-upstream_cur_cell = linkage_HYBAS %>% filter(HYBAS_ID %in% ws_within_cur_cell$HYBAS_ID)
-#Get the spatial subset of all the upstream watersheds
-upstream_cur_cell_vec = 
-  data_merged_fishnet %>% 
-  filter(HYBAS_ID %in% upstream_cur_cell$chain) %>%
-  #Subset to those that are part of the neighbours of the current cell
-  filter(cellnumber %in% cur_neighbours)
-
-#Summarize to get total upstreamness area of each neighboring cell
-upstream_cur_cell_area = 
-  upstream_cur_cell_vec %>%
-  st_drop_geometry() %>%
-  as.data.table() %>%
-  dplyr::group_by(cellnumber) %>%
-  dplyr::summarise(up_area = sum(area, na.rm = T))
-
-#Get the total cell area - the cell area actually the sum of all ws within it
-#and not the actual raster cell size. This because we are using centroids to link cells to
-#watersheds. So a watershed centroid might be within a cell, but its boundaries might spill
-#out. This can cause issues when summing for area and calculating proportions.
-
-#Get area of neighbouring cells
-neighbour_cur_cell_area = 
-  data_merged_fishnet %>% 
-  #Subset to those that are part of the neighbours of the current cell
-  filter(cellnumber %in% cur_neighbours) %>%
-  st_drop_geometry() %>%
-  as.data.table() %>%
-  dplyr::group_by(cellnumber) %>%
-  dplyr::summarise(total_area = sum(area, na.rm = T))
-
-#Create a merged dataset
-merged_output = 
-  neighbour_cur_cell_area %>%
-  mutate(Center = cur_cell) %>%
-  merge(upstream_cur_cell_area, by = 'cellnumber', all.x = T) %>%
-  relocate(Center)
-
-
-

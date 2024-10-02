@@ -2,57 +2,13 @@
 ##Human Footprint Index
 ####################################
 
-library(tidync)
-library(data.table)
-library(tidyverse)
-library(lubridate)
-library(zyp)
-library(sf)
-library(raster)
-library(terra)
-library(RColorBrewer)
-library(rasterVis)
-library(xts)
-library(fasterize)
-library(stringdist)
-library(fuzzyjoin)
-library(stars)
-library(tidyterra)
-library(modelr)
-library(haven)
+machine = '' #WB_VDM
 
+source('0_environment/setEnvironment.R')
 
-#paths
-machine = 'local'
-if(machine == 'gcp'){
-  proj_dir = "/home/thora/Projects/greenWater_Forest/"
-  database = "/home/thora/Database/"
-} else{
-  proj_dir = "~/Dropbox/WB/greenWater_Forest/"
-  database = "~/Dropbox/Database/"
-}
-
-
-#Custom function
-per_na = function(x){
-  out = apply(x, MARGIN = 2, FUN = function(x){round(sum(is.na(x))*100/length(x), 2)})
-  return(out)
-}
-
-##############################
-####Load World Regions
-wb_regions = 
-  st_read(paste0(database, "Admin/WB_Regions/WB_countries_Admin0_10m.shp")) %>%
-  dplyr::select(WB_NAME, ISO_A2, ISO_A3, ISO_N3, TYPE, REGION_WB) %>%
-  filter(TYPE != 'Dependency') %>%
-  st_make_valid()
-
-#Load the fishnet
-fishnet = 
-  st_read(paste0(database,'Fishnet_halfdegree/global_fishnet.shp'))
-
-fishnet.r = 
-  rast(paste0(database,'Fishnet_halfdegree/global_fishnet_raster.tif'))
+#Reference Raster
+fishnet.r.03125 = 
+  disagg(fishnet.r, fact = 16)
 
 ##############################
 #Forest Fragmentation Data
@@ -72,6 +28,10 @@ data_fishnet2 =
   terra::resample(data_in1, fishnet.r, method = 'med')
 
 data_fishnet = c(data_fishnet1, data_fishnet2)
+
+##For One-time processing to 0.03125 degree resolution
+data_fishnet1 = 
+  terra::resample(data_in1, fishnet.r.03125, method = 'med')
 
 #Convert to dataframe
 out.df = 
@@ -103,4 +63,16 @@ if (dir.exists(path2out) == F) {
   dir.create(path2out)
 }
 
+
 fwrite(out.df, paste0(path2out ,"humanFootprint_2000_2020_05deg.csv"))
+
+##For One-time processing to 0.03125 degree resolution
+i = 1
+list_of_names = names(data_fishnet1)
+for(i in 1:length(list_of_names)){
+  
+  terra::writeRaster(data_fishnet1[[i]],
+                     paste0(path2data, "processed/", names(data_fishnet1)[i], '_03125.tif'),
+                     overwrite = T)
+}
+
