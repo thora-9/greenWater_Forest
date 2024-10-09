@@ -66,19 +66,18 @@ path2data = paste0(database, "SocioEconomic/ElectricityAccess_Min_2024/HREAv1.1_
 year <- 
   2013:2020 %>% as.list()
 
-create_composite <- function(cur_year){
+file_type <- c('rade9lnmu', 'set_zscore', 'set_lightscore', 'set_prplit')
+
+create_composite <- function(cur_year, type_of_file = file_type[2]){
   data_in1 = 
     list.files(path2data, paste0(cur_year, '.tif$'), full.names = T, recursive = T) %>%
     lapply(rast) %>%
-    lapply(function(x){terra::resample(x, fishnet.r, method = 'med')}) %>%
+    parallel::mclapply(function(x){terra::resample(x, fishnet.r, method = 'med')}, mc.cores = 4) %>%
     sprc() %>%
     terra::merge(na.rm = T, overwrite=TRUE)
   
-  data_fishnet2 = 
-    terra::resample(data_in1, fishnet.r, method = 'med')
-  
-  writeRaster(data_in1, paste0(paste0(database, "SocioEconomic/ElectricityAccess_Min_2024/", 'processed/',
-                                      'avg_rad', cur_year, '_med.tif')))
+  writeRaster(data_in1, paste0(database, "SocioEconomic/ElectricityAccess_Min_2024/", 'processed/',
+                               type_of_file, '_', cur_year, '_med.tif'))
 }
 
 #Run the process in parallel
