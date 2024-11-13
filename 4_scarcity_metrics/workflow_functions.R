@@ -312,4 +312,79 @@ country_level_scarcity = function(df, withdrawal_based, cropland_threshold = F){
   return(output)
 }
 
+
+blue_water_scarcity <- function(df, withdrawal_based, agg_func = 'median'){
+  print("0 - Kicking things off")
+    #Get yearly water metrics by pixel by year
+    output = 
+      df %>%
+      merge(ref_raster_df, by = c('lon', 'lat'), all.x=T) %>%
+      dplyr::select(lon, lat, area:REGION_WB, year, month, gwa_m_month, bwa_m_month, airrww, aindww, aliveww, adomww,
+                    airruse, ainduse, aliveuse, adomuse, pirruse)
+    ##########
+    print("1 - Datasets merged; variable subset taken")
+    ##########
+    output = 
+      output %>%
+      tidytable::mutate(across(airrww:pirruse, ~ .x*area, .names = "{.col}_m3"),
+                        bwa_m3 = bwa_m_month*area) %>%
+      tidytable::mutate(actual_water_withdrawal_m3 = airrww_m3+aindww_m3+aliveww_m3+adomww_m3,
+                        actual_water_consumed_m3 = airruse_m3+ainduse_m3+aliveuse_m3+adomuse_m3) 
+    
+    ##########
+    print("2 - Values converted to volumes; withdrawal and consumption calculated")
+    ##########
+    output = 
+      output %>%
+      #Calculate scarcity at the monthly-scale
+      tidytable::mutate(bws_pixel = actual_water_withdrawal_m3/bwa_m3 #Irrigation Water Consumption to Blue Water Availability
+      ) 
+    ##########
+    print("3 - Monthly scarcity estimated for each pixel")
+    ##########
+    output = 
+      output %>%
+      tidytable::mutate(bws_pixel_bin = ifelse(bws_pixel > 1, 1, 0)) 
+    ##########
+    print("4 - Scarcity values converted to binary for each month for each pixel")
+    ##########
+    
+    if(agg_func == 'median'){
+      output = 
+        output %>%
+        tidytable::group_by(lon, lat, WB_NAME, ISO_A3, year) %>% #Convert from monthly to yearly by taking the sum
+        tidytable::summarise(across(airrww_m3:actual_water_consumed_m3, ~ sum(.x, na.rm = T), .names = "{.col}_year"),
+                             across(bws_pixel, ~median(.x, na.rm = T)),
+                             across(bws_pixel_bin, ~ sum(.x, na.rm = T), .names = "{.col}_year"))
+      
+      ##########
+      print("5 - Monthly values converted to yearly; using median")
+      ##########
+    } else if (agg_func == 'max'){
+      output = 
+        output %>%
+        tidytable::group_by(lon, lat, WB_NAME, ISO_A3, year) %>% #Convert from monthly to yearly by taking the sum
+        tidytable::summarise(across(airrww_m3:actual_water_consumed_m3, ~ sum(.x, na.rm = T), .names = "{.col}_year"),
+                             across(bws_pixel, ~max(.x, na.rm = T)),
+                             across(bws_pixel_bin, ~ sum(.x, na.rm = T), .names = "{.col}_year"))
+      
+      ##########
+      print("5 - Monthly values converted to yearly; using max")
+      ##########
+    }
+    ##########
+    output = 
+      output %>%
+      #Calculate scarcity at the yearlu-scale
+      tidytable::mutate(bws_pixel_year = actual_water_withdrawal_m3_year/bwa_m3_year) %>%
+      tidytable::mutate(bws_atleast1_bin = ifelse(bws_pixel_bin_year >= 1, 1, 0)) %>% #Get pixels with atleast 1 month of scarcity
+      tidytable::mutate(bws_pixel_year_bin = ifelse(bws_pixel_year > 1, 1, 0)) %>% #Get the bin value using yearly pixel level scarcity metrics
+      tidytable::filter(!is.na(WB_NAME))
+    
+    ##########
+    print("6 - Yearly scarcity calculated (incl. binary)")
+    ##########
+    
+    return(output)
+}
 ##########################################################################################
