@@ -99,3 +99,53 @@ fwrite(admin2_linked_aquaduct_df,
 
 st_write(admin2_linked_aquaduct, 
          paste0(path2out, "processed/water_stress_admin2.gpkg"), delete_layer = T)
+
+##########################################################################################
+path2out = paste0(database, 'WaterManagement/Aqueduct_v4_2023/')
+
+admin2_linked_aquaduct =
+  st_read(paste0(path2out, "processed/water_stress_admin2.gpkg")) 
+
+
+plot1 = 
+  admin2_linked_aquaduct %>%
+  filter(!bws_label %in% c("No Data", NA)) %>%
+  mutate(bws_label=factor(bws_label, levels=c("Extremely High (>80%)","High (40-80%)",
+                                      "Medium - High (20-40%)", "Low - Medium (10-20%)", "Low (<10%)", 
+                                      "Arid and Low Water Use"))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = bws_label), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049', 'grey'), name = "Water Stress - present") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2out, 'water_stress_2020', '.png'), plot=plot1,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')
+
+
+plot2 = 
+  admin2_linked_aquaduct %>%
+  filter(!bau50_ws_x_l %in% c("No Data", NA)) %>%
+  mutate(bau50_ws_x_l=factor(bau50_ws_x_l, levels=c("Extremely high (>80%)","High (40-80%)",
+                                              "Medium-high (20-40%)", "Low-medium (10-20%)", "Low (<10%)", 
+                                              "Arid and low water use"))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = bau50_ws_x_l), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049', 'grey'), name = "Water Stress - 2050 (BAU)") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2out, 'water_stress_2050', '.png'), plot=plot2,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')

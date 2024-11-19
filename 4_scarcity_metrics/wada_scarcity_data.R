@@ -40,7 +40,7 @@ ref_raster_df =
   terra::as.data.frame(xy=T, cells=FALSE) %>%
   as.data.table() %>%
   drop_na() %>%
-  dplyr::rename(lon = x, lat = y, rownumber = layer) %>%
+  dplyr::rename(Lon = x, Lat = y, rownumber = layer) %>%
   merge(wb_regions %>% st_drop_geometry() %>% dplyr::select(WB_NAME, ISO_A3, rownumber, REGION_WB),
         by = 'rownumber', all.x = T) %>%
   drop_na()
@@ -50,14 +50,14 @@ path2pop = paste0(database, "SocioEconomic/Population/ghs_pop/")
 population = 
   fread(paste0(path2pop, "processed/population_1980_2020_05.csv"))
 
-source('4_scarcity_metrics/workflow_functions.R')
-ds_isimip = readRDS(paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
-
-withdrawal_based = F
-#Transform PCR-GLOBWB data
-ds_isimip_transform = pre_process_PCR_GLOBWB(ds_isimip, withdrawal_based)
-
-ds_pixel_year = blue_water_scarcity(ds_isimip_transform, withdrawal_based)
+# source('4_scarcity_metrics/workflow_functions.R')
+# ds_isimip = readRDS(paste0(database, "ISIMIP/ISIMIP2b/Global_Hydrology/PCR_GLOBWB/GFDL_ESM2M/processed/all_vars_1981_2005_monthly.rds"))
+# 
+# withdrawal_based = F
+# #Transform PCR-GLOBWB data
+# ds_isimip_transform = pre_process_PCR_GLOBWB(ds_isimip, withdrawal_based)
+# 
+# ds_pixel_year = blue_water_scarcity(ds_isimip_transform, withdrawal_based)
 
 ##########################################################################################
 ds_all = 
@@ -70,7 +70,7 @@ ds_all =
 ds_country_level = 
   ds_all %>%
   group_by(WB_NAME, ISO_A3, Year) %>%
-  summarise(Discharge_lpjml_km3yr = sum(Discharge_lpjml_km3yr, na.rm = T))
+  summarise(Water_Scarcity_lpjml = mean(Water_Scarcity_lpjml, na.rm = T))
 
 ##########################################################################################
 #Tests
@@ -116,8 +116,135 @@ plot_rast_year(2022)
 
 
 ##########################################################################################
-#fwrite(ds_all, paste0(path2data, "processed/water_scarcity_1980_2022_05deg.csv"))
+#fwrite(ds_all, paste0(path2data, "processed/water_scarcity_EFR_1980_2022_05deg.csv"))
 
 terra::writeRaster(cur_rast,
                    paste0(path2data, "processed/scarcity_2022_lpj2.tif"),
                    overwrite = T)
+
+##########################################################################################
+path2data = paste0(database, 'WaterManagement/Water_Scarcity_Wada_WB_2024/scarcity_data/')
+
+ds_LPJml =
+  fread(paste0(path2data, "processed/water_scarcity_EFR_1980_2022_05deg.csv")) %>%
+  filter(Year == 2022) %>%
+  dplyr::select(1, 2, Water_Scarcity_lpjml) %>%
+  rasterFromXYZ() %>% rast()
+
+ds_pcrglobwb =
+  fread(paste0(path2data, "processed/water_scarcity_EFR_1980_2022_05deg.csv")) %>%
+  filter(Year == 2022) %>%
+  dplyr::select(1, 2, Water_Scarcity_pcrglobe) %>%
+  rasterFromXYZ() %>% rast()
+
+
+########################################################################################################################
+#Aggregate to admin-2
+path2admin = paste0(database, 'Admin/GAUL/')
+
+admin2 = 
+  st_read(paste0(path2admin, 'g2015_2014_2.shp'), crs = 4326) %>%
+  terra::extract(ds_LPJml, ., fun=mean, bind = T, na.rm = T) %>%
+  terra::extract(ds_pcrglobwb, ., fun=mean, bind = T, na.rm = T) %>%
+  as_sf()
+
+admin2_df = 
+  admin2%>% 
+  st_drop_geometry() %>% as.data.table() 
+
+fwrite(admin2_df, paste0(path2data, "processed/water_scarcity_admin2_2022.csv"))
+
+plot1 = 
+  admin2 %>%
+  filter(!Water_Scarcity_lpjml %in% c(NaN, NA)) %>%
+  mutate(ws_cat = cut(Water_Scarcity_lpjml, breaks = c(0,0.1,0.2,0.4,0.8,1))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = ws_cat), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=rev(c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049')), name = "Water Stress - LPJmL") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2data, 'processed/water_stress_lpj', '.png'), plot=plot1,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')
+
+
+plot2 = 
+  admin2 %>%
+  filter(!Water_Scarcity_pcrglobe %in% c(NaN, NA)) %>%
+  mutate(ws_cat = cut(Water_Scarcity_pcrglobe, breaks = c(0,0.1,0.2,0.4,0.8,1))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = ws_cat), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=rev(c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049')), name = "Water Stress - PCR-GLOBWB") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2data, 'processed/water_stress_pcr', '.png'), plot=plot2,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')
+
+########################################################################################################################
+#Aggregate to admin-0
+path2admin = paste0(database, 'Admin/GAUL/')
+
+admin0 = 
+  wb_regions %>%
+  terra::extract(ds_LPJml, ., fun=mean, bind = T, na.rm = T) %>%
+  terra::extract(ds_pcrglobwb, ., fun=mean, bind = T, na.rm = T) %>%
+  as_sf()
+
+admin0_df = 
+  admin0 %>% 
+  st_drop_geometry() %>% as.data.table() 
+
+fwrite(admin0_df, paste0(path2data, "processed/water_scarcity_admin0_2022.csv"))
+
+plot1 = 
+  admin0 %>%
+  filter(!Water_Scarcity_lpjml %in% c(NaN, NA)) %>%
+  mutate(ws_cat = cut(Water_Scarcity_lpjml, breaks = c(0,0.1,0.2,0.4,0.8,1))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = ws_cat), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=rev(c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049')), name = "Water Stress - LPJmL") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2data, 'processed/water_stress_lpj_admin0', '.png'), plot=plot1,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')
+
+
+plot2 = 
+  admin0 %>%
+  filter(!Water_Scarcity_pcrglobe %in% c(NaN, NA)) %>%
+  mutate(ws_cat = cut(Water_Scarcity_pcrglobe, breaks = c(0,0.1,0.2,0.4,0.8,1))) %>%
+  ggplot() + 
+  geom_sf(aes(fill = ws_cat), lwd = 0, alpha = 1) + 
+  scale_fill_manual(values=rev(c("#780000", "#C1121F", "#FDF0D5", '#669BBC', '#003049')), name = "Water Stress - PCR-GLOBWB") +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        #legend.position="right",
+        legend.position = c(.2, .2),
+        legend.box.background = element_rect(),
+        legend.box.margin = margin(6, 6, 6, 6),
+        legend.text=element_text(size=16), legend.title = element_text(size=22),
+        legend.key.size = unit(0.8, "cm")) 
+
+ggsave(paste0(path2data, 'processed/water_stress_pcr_admin0', '.png'), plot=plot2,
+       scale=1.5, dpi=300,width =34.85,height = 18, units = 'cm')
+
