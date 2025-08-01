@@ -7,9 +7,9 @@ machine = '' #WB_VDM
 source('0_environment/setEnvironment.R')
 
 #Specify the continent
-cur_continent = 'Australasia'
-cur_continent_abr = 'AU'
-cur_continent_abr_UP = 'au'
+cur_continent = 'South America'
+cur_continent_abr = 'SA'
+cur_continent_abr_UP = 'sa'
 
 ##############################
 #Continent-level
@@ -85,7 +85,7 @@ unique_values =
 
 #Get the cell numbers with cell values
 cell_numbers = 
-  terra::cells(fishnet_rID, unique_values, pair = T) %>% as.data.table() %>%
+  terra::cells(fishnet_rID, unique_values, pairs = T) %>% as.data.table() %>%
   dplyr::rename(cellnumber = 1, Id = 2)
 
 #Link cell numbers to values and HYBAS ID
