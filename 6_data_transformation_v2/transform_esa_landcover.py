@@ -3,10 +3,8 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import os
-from shapely.geometry import box
-import dask
-from dask.diagnostics import ProgressBar
-import gc
+from glob import glob
+from shapely.geometry import Point
 
 
 #project code
@@ -21,137 +19,173 @@ out_dir = database + "LULC/ESA_CCI_LC_2025/1_processed/"
 # Create the folder if it doesn't exist
 os.makedirs(out_dir, exist_ok=True)
 
-#################################################################
-# --- Step 1: Load NetCDF with Dask ---
-path = in_dir + "ESACCI-LC-L4-LCCS-Map-300m-P1Y-1992-v2.0.7cds.nc"
-ds = xr.open_dataset(path) 
-#Match the original chunking on disk
-ds = ds.chunk({"lat": 1800, "lon": 1800})  # This helps match the coarsen operation to aggregate 300m to 0.5 degree res
-#print(ds["lccs_class"].encoding)
-#print(ds['crs']) 
 
-# --- Step 2: Extract the land cover variable ---
-da = ds["lccs_class"]  # replace with your actual variable name if different
+def process_tree_cover_folder(nc_folder, tree_classes=[50,60,70,80,90,100,160,170], coarsen_pixels=180):
+    """
+    Process multiple NetCDF files containing land cover, 
+    count tree cover pixels per coarse cell and return combined DataFrame.
 
-# Define coarsen window size (180 pixels * 0.00277778 deg ≈ 0.5 deg)
-coarsen_lat = 180
-coarsen_lon = 180
+    Parameters:
+    - nc_folder: folder path containing NetCDF files (1 file per year)
+    - tree_classes: list of land cover classes representing tree cover
+    - coarsen_pixels: number of pixels to aggregate (~0.5 deg)
 
-# Coarsen object (lazy)
-coarsened = da.coarsen(lat=coarsen_lat, lon=coarsen_lon, boundary="trim")
+    Returns:
+    - df_combined: DataFrame with lat, lon, and tree cover counts per year
+    """
 
-# Class values to count (modify if needed)
-class_values = np.arange(10, 230, 10)
+    # Find NetCDF files sorted by name (assumed includes year)
+    nc_files = sorted(glob(os.path.join(nc_folder, "*.nc")))
 
-# Create lists to hold results
-count_list = []
-lat_centers = []
-lon_centers = []
+    # Prepare list to hold yearly DataFrames
+    df_list = []
 
-# Calculate new coarse lat/lon coordinates (cell centers)
-lat_coarse = (
-    da.lat.coarsen(lat=coarsen_lat, boundary="trim").mean().compute()
-)
-lon_coarse = (
-    da.lon.coarsen(lon=coarsen_lon, boundary="trim").mean().compute()
-)
+    for nc_path in nc_files:
+        print(f"Processing {nc_path} ...")
+        ds = xr.open_dataset(nc_path)
+        ds = ds.chunk({"lat": coarsen_pixels*10, "lon": coarsen_pixels*10})  # chunk bigger than coarsen window
 
-# Loop over classes and count pixels in each coarse cell
-for class_val in class_values:
-    # Construct boolean mask for the class inside blocks
-    mask = (coarsened.construct(lat=("lat_block", "lat"), lon=("lon_block", "lon")) == class_val)
+        da = ds["lccs_class"]
 
-    # Sum pixels in each block
-    count = mask.sum(dim=("lat", "lon"))
+        # Convert water bodies (class 210) to NaN
+        da = da.where(da != 210)
 
-    # Assign class value as coordinate
-    count = count.assign_coords(lc_class=class_val)
+        # Create binary mask for tree classes
+        is_tree = da.isin(tree_classes).astype(np.uint8)  # 1 = tree, 0 = not tree, NaN = water
 
-    # Append result
-    count_list.append(count)
+        # Coarsen for tree pixel counts
+        tree_count = is_tree.coarsen(lat=coarsen_pixels, lon=coarsen_pixels, boundary="trim").sum().compute()
 
-# Concatenate all class counts along new 'lc_class' dimension
-result = xr.concat(count_list, dim="lc_class")
+        # Coarsen for valid land pixel counts
+        land_pixel_count = da.notnull().coarsen(lat=coarsen_pixels, lon=coarsen_pixels, boundary="trim").sum().compute()
 
-# Assign proper coordinates for lat/lon coarse grid
-result = result.assign_coords(
-    lat=("lat_block", lat_coarse.data),
-    lon=("lon_block", lon_coarse.data)
-)
+        # Calculate total pixels per block (e.g., 180x180 = 32400)
+        total_pixels = coarsen_pixels * coarsen_pixels  # = 32400
 
-# Reorder dims for clarity (lc_class, lat, lon)
-result = result.transpose("lc_class", "time", "lat_block", "lon_block")
+        # Compute % tree using land pixels
+        percent_tree_land = (tree_count / land_pixel_count) * 100
 
-# Convert to pandas DataFrame, with lat/lon columns
-df = result.to_dataframe(name="pixel_count").reset_index()
+        # Compute % tree using all pixels (including NaNs)
+        percent_tree_total = (tree_count / total_pixels) * 100
 
+        # Assign lat/lon block centers
+        lat_coarse = da.lat.coarsen(lat=coarsen_pixels, boundary="trim").mean().compute()
+        lon_coarse = da.lon.coarsen(lon=coarsen_pixels, boundary="trim").mean().compute()
 
-print(df.head())
+        # Extract year from filename
+        basename = os.path.basename(nc_path)
+        year = basename.split("-")[7]
 
-# --- Optional Step 8: Export to CSV or NetCDF ---
-# df.to_csv("landcover_counts_0.5deg.csv", index=False)
-# counts.to_netcdf("landcover_counts_0.5deg.nc")
+        # Assign coordinates for each array
+        tree_count = tree_count.assign_coords(lat=("lat", lat_coarse.data), lon=("lon", lon_coarse.data))
+        percent_tree_land = percent_tree_land.assign_coords(lat=("lat", lat_coarse.data), lon=("lon", lon_coarse.data))
+        percent_tree_total = percent_tree_total.assign_coords(lat=("lat", lat_coarse.data), lon=("lon", lon_coarse.data))
 
+        # Drop 'time' coordinate (only 1 time slice per file)
+        tree_count = tree_count.squeeze("time", drop=True)
+        percent_tree_land = percent_tree_land.squeeze("time", drop=True)
+        percent_tree_total = percent_tree_total.squeeze("time", drop=True)
 
+        # Convert each to dataframe with year-specific column names
+        df_tree = tree_count.to_dataframe(name=f"tree_cover_count_{year}").reset_index()
+        df_pct_land = percent_tree_land.to_dataframe(name=f"percent_tree_land_{year}").reset_index()
+        df_pct_total = percent_tree_total.to_dataframe(name=f"percent_tree_total_{year}").reset_index()
 
+        # Merge the three metrics for this year
+        df_year = df_tree.merge(df_pct_land, on=["lat", "lon"]).merge(df_pct_total, on=["lat", "lon"])
 
+        # Append to list
+        df_list.append(df_year)
 
-# --- Optional: Save to CSV or GeoJSON later ---
-#counts.to_csv("class_counts_0.5deg.csv", index=False)
+    # Initialize with the first year's full DataFrame
+    df_combined = df_list[0]
 
-# #################################################################
-# # --- Step 2: Load your existing shapefile ---
-# grid_path = database + "Fishnet_halfdegree/" + "global_fishnet_fixed.gpkg"  # Replace with your shapefile path
-# grid = gpd.read_file(grid_path)
+    # Merge subsequent years
+    for dfy in df_list[1:]:
+        df_combined = df_combined.merge(dfy, on=["lat", "lon"], how="outer")
 
-# # Ensure the CRS is EPSG:4326 (lat/lon), reproject if necessary
-# if grid.crs != "EPSG:4326":
-#     grid = grid.to_crs("EPSG:4326")
+    # Fill missing values (e.g., regions with no land/tree)
+    df_combined = df_combined.fillna(0).sort_values(by=["lat", "lon"]).reset_index(drop=True)
 
-# # Add an ID column if it doesn't exist
-# if "grid_id" not in grid.columns:
-#     grid["grid_id"] = grid.index
+    return df_combined
 
-# gc.collect()
+# Usage:
+df_tree_counts = process_tree_cover_folder(in_dir)
+print(df_tree_counts.head())
 
-# #################################################################
-# # --- Step 3: Flatten the raster to point data ---
-# print("Flattening raster with Dask...")
-
-# def to_point_df(da):
-#     lat_vals = da["lat"].values
-#     lon_vals = da["lon"].values
-#     lat_grid, lon_grid = np.meshgrid(lat_vals, lon_vals, indexing='ij')
-    
-#     flat = da.data.reshape(-1)
-#     lat_flat = lat_grid.ravel()
-#     lon_flat = lon_grid.ravel()
-    
-#     df = pd.DataFrame({
-#         'lat': lat_flat,
-#         'lon': lon_flat,
-#         'class': flat
-#     })
-    
-#     df = df.dropna()
-#     df = df[df['class'] >= 0]
-#     return df
-
-# # Use Dask to compute this lazily
-# point_df = dask.delayed(to_point_df)(lc_data)
+#df_tree_counts.to_csv(out_dir + "tree_cover_counts_by_year.csv", index=False)
 
 
+def filter_df_by_gpkg_polygons(df, gpkg_path):
+    """
+    Filters a DataFrame of lat/lon points to keep only those
+    that fall within any polygon in the GeoPackage.
 
-# # --- Step 4: Spatial join between points and 0.5° grid ---
-# def spatial_join_count(df, grid):
-#     points = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs="EPSG:4326")
-#     joined = gpd.sjoin(points, grid, how='inner', predicate='within')
-#     counts = joined.groupby(['grid_id', 'class']).size().reset_index(name='count')
-#     return counts
+    Parameters:
+    - df: pandas DataFrame with 'lat' and 'lon' columns
+    - gpkg_path: path to GeoPackage file with polygon grid cells
 
-# counts_delayed = dask.delayed(spatial_join_count)(point_df, grid)
+    Returns:
+    - filtered_df: subset of df where points fall inside gpkg polygons
+    """
 
-# # --- Step 5: Compute the result with progress bar ---
-# print("Running spatial join and aggregation with Dask...")
-# with ProgressBar():
-#     counts = counts_delayed.compute()
+    # Load polygons from gpkg
+    polygons_gdf = gpd.read_file(gpkg_path)
+
+    # Convert df points to GeoDataFrame
+    points_gdf = gpd.GeoDataFrame(
+        df,
+        geometry=[Point(xy) for xy in zip(df['lon'], df['lat'])],
+        crs=polygons_gdf.crs  # assume both use the same CRS, if not, reproject needed
+    )
+
+    # Spatial join: keep points inside polygons
+    joined = gpd.sjoin(points_gdf, polygons_gdf, how="inner", predicate="within")
+
+    # --- Check 1-to-1 match ---
+    # Group by point lat/lon and check how many unique polygon Lat/Lon combinations exist
+    grouped = joined.groupby(['lat', 'lon'])[['Lat', 'Lon']].nunique()
+
+    # Find point coords that map to exactly 1 polygon Lat/Lon
+    one_to_one = (grouped['Lat'] == 1) & (grouped['Lon'] == 1)
+    one_to_one_matches = one_to_one.sum()
+    total_unique_points = len(grouped)
+
+    print(f"{one_to_one_matches} out of {total_unique_points} unique lat/lon point combinations have a 1-to-1 match in polygon grid.")
+
+    # Optional: Replace lat/lon in points with polygon Lat/Lon where 1-to-1 match
+    if one_to_one_matches == total_unique_points:
+        print("All point locations have a unique matching polygon location. You can safely replace lat/lon.")
+        # Replace lat/lon in joined with Lat/Lon from polygon
+        joined['lat'] = joined['Lat']
+        joined['lon'] = joined['Lon']
+        print("lat/lon columns have been replaced with polygon Lat/Lon values.")
+    else:
+        print("Some point locations have ambiguous or no polygon match. Be cautious before replacing lat/lon.")
+
+    # Check exact matches
+    lat_match = joined['lat'] == joined["Lat"]
+    lon_match = joined['lon'] == joined["Lon"]
+    exact_match = lat_match & lon_match
+
+    total_points = len(joined)
+    matched_points = exact_match.sum()
+
+    if matched_points == total_points:
+        print("All points' lat/lon exactly match the polygon lat/lon columns.")
+    elif matched_points == 0:
+        print("No points' lat/lon exactly match the polygon lat/lon columns.")
+    else:
+        print(f"{matched_points} out of {total_points} points' lat/lon exactly match the polygon lat/lon columns.")
+
+    # Drop the geometry and polygon columns, keep original df columns
+    filtered_df = joined[df.columns].reset_index(drop=True)
+
+    return filtered_df
+
+fishnet = '/Users/tejasvi/Dropbox/Database/Fishnet_halfdegree/global_fishnet_fixed.gpkg'
+df_filtered = filter_df_by_gpkg_polygons(df_tree_counts, fishnet)
+print(df_filtered.head())
+
+
+df_filtered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
