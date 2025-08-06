@@ -7,7 +7,7 @@ source('0_environment/setEnvironment.R')
 
 in_dir = paste0(database, "LULC/ESA_CCI_LC_2025/1_processed/")
 
-esa_tree_cover = fread(paste0(in_dir, "ESA_tree_cover_2015_05.csv"))
+esa_tree_cover = fread(paste0(in_dir, "ESA_tree_cover_by_year_05.csv"))
 
 esa_tree_cover_2015 = 
   terra::rast(esa_tree_cover[, c('lon','lat', 'tree_cover_count_2015', 
@@ -37,4 +37,3 @@ ggplot(all_2015, aes(x = share_forest_esa - percent_tree_total_2015/100)) +
   labs(title = "Difference in Forest Share \nin 2015 (old - new)",
        x = "Value", y = "Count") +
   theme_bw()
-

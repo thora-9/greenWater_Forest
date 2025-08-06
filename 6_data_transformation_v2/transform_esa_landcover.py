@@ -115,7 +115,7 @@ coarsen_val = 180 #Number of pixels to coarsen by
 df_tree_counts = process_tree_cover_folder(in_dir, tree_class_vals, coarsen_val)
 print(df_tree_counts.head())
 
-#df_tree_counts.to_csv(out_dir + "tree_cover_counts_by_year.csv", index=False)
+#df_tree_counts.to_csv(out_dir + "tree_cover_counts_by_year_ALL.csv", index=False)
 
 
 def filter_df_by_gpkg_polygons(df, gpkg_path):
@@ -185,10 +185,16 @@ def filter_df_by_gpkg_polygons(df, gpkg_path):
 
     return filtered_df
 
-fishnet = '/Users/tejasvi/Dropbox/Database/Fishnet_halfdegree/global_fishnet_fixed.gpkg'
+fishnet = '/Users/tejasvi/Dropbox/Database/Fishnet_halfdegree/global_fishnet_30percent_regularized.gpkg'
 df_filtered = filter_df_by_gpkg_polygons(df_tree_counts, fishnet)
 print(df_filtered.head())
 
+#Re-order the columns
+cols = df_filtered.columns.tolist()
+move_cols = df_filtered.loc[:, 'tree_cover_count_2016':'percent_tree_total_2022'].columns.tolist()
+after_idx = cols.index('percent_tree_total_2015') + 1
+new_cols = [col for col in cols if col not in move_cols] + move_cols
+df_reordered = df_filtered[new_cols]
 
-#df_filtered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
+df_reordered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
 
