@@ -110,7 +110,9 @@ def process_tree_cover_folder(nc_folder, tree_classes=[50,60,70,80,90,100,160,17
     return df_combined
 
 # Usage:
-df_tree_counts = process_tree_cover_folder(in_dir)
+tree_class_vals = list(range(50, 101)) + [160, 170]
+coarsen_val = 180 #Number of pixels to coarsen by
+df_tree_counts = process_tree_cover_folder(in_dir, tree_class_vals, coarsen_val)
 print(df_tree_counts.head())
 
 #df_tree_counts.to_csv(out_dir + "tree_cover_counts_by_year.csv", index=False)
@@ -188,4 +190,5 @@ df_filtered = filter_df_by_gpkg_polygons(df_tree_counts, fishnet)
 print(df_filtered.head())
 
 
-df_filtered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
+#df_filtered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
+
