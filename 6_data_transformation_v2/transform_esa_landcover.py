@@ -111,7 +111,8 @@ def process_tree_cover_folder(nc_folder, tree_classes=[50,60,70,80,90,100,160,17
 
 # Usage:
 tree_class_vals = list(range(50, 101)) + [160, 170]
-coarsen_val = 180 #Number of pixels to coarsen by
+coarsen_val = 37 #Number of pixels to coarsen by;
+# 37 to approximate 0.1° blocks from 300m pixels; 180 pixels for 0.5 degrees
 df_tree_counts = process_tree_cover_folder(in_dir, tree_class_vals, coarsen_val)
 print(df_tree_counts.head())
 
@@ -159,8 +160,8 @@ def filter_df_by_gpkg_polygons(df, gpkg_path):
     if one_to_one_matches == total_unique_points:
         print("All point locations have a unique matching polygon location. You can safely replace lat/lon.")
         # Replace lat/lon in joined with Lat/Lon from polygon
-        joined['lat'] = joined['Lat']
-        joined['lon'] = joined['Lon']
+        #joined['lat'] = joined['Lat']
+        #joined['lon'] = joined['Lon']
         print("lat/lon columns have been replaced with polygon Lat/Lon values.")
     else:
         print("Some point locations have ambiguous or no polygon match. Be cautious before replacing lat/lon.")
@@ -196,5 +197,5 @@ after_idx = cols.index('percent_tree_total_2015') + 1
 new_cols = [col for col in cols if col not in move_cols] + move_cols
 df_reordered = df_filtered[new_cols]
 
-df_reordered.to_csv(out_dir + "ESA_tree_cover_by_year_05.csv", index=False)
+df_reordered.to_csv(out_dir + "ESA_tree_cover_by_year_01.csv", index=False)
 
