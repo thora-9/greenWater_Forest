@@ -12,6 +12,7 @@ cur_continent_abr = 'AU'
 cur_continent_abr_UP = 'au'
 cur_folder_name = '250807'
 cur_run = 'upstream' #unconnected #upstream
+run_name = 'ESA_LC_'
 
 ##############################
 #Fix the fishnet
@@ -95,7 +96,7 @@ dist_threshold = 'nodist' #nodist #w100km
 ##########################################
 #Load the summarized output
 
-run_name = 'ESA_LC_'
+#run_name = 'ESA_LC_'
 
 if(cur_run == 'unconnected'){
   path2linkage = paste0(proj_dir, 'Unconnected/', cur_continent,'/', cur_folder_name, '/')
@@ -218,12 +219,89 @@ if(cur_run == 'unconnected'){
 ########################################################## 
 
 og_data = fread('/Users/tejasvi/Dropbox/Database/LULC/ESA_CCI_LC_2025/1_processed/ESA_tree_cover_by_year_05.csv')
-upstream_data = fread('/Users/tejasvi/Dropbox/WB/livable_planet/greenwater_forests_biodiv/Upstream/South America/070825/upstream_ESA_LC_sa_allWS_nodist.csv')
+upstream_data = fread('/Users/tejasvi/Dropbox/WB/livable_planet/greenwater_forests_biodiv/Upstream/South America/250807/upstream_ESA_LC_sa_allWS_nodist.csv')
 
 upstream_rast = terra::rast(upstream_data[,.(Lon, Lat, percent_tree_total_2015)], type = "xyz", crs = "epsg:4326")
 og_rast = 
   terra::rast(og_data[,.(lon, lat, percent_tree_total_2015)], type = "xyz", crs = "epsg:4326") %>%
   crop(upstream_rast)
+
+
+##########################################################
+#Check for Duplicates
+########################################################## 
+#Specify the continent
+cur_continent = 'North America'
+cur_continent_abr = 'NA'
+cur_continent_abr_UP = 'na'
+cur_folder_name = '250807'
+cur_run = 'upstream' #unconnected #upstream
+run_name = 'ESA_LC_'
+dist_threshold = 'w100km' #nodist #w100km
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+
+test1 = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+test2 = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_top5up_', 
+                                 dist_threshold, '.csv'))
+
+length(unique(test1$Id)) == nrow(test1)
+length(unique(test1$Id)) == nrow(test2)
+
+cur_continent = 'North America'
+cur_continent_abr = 'NA'
+cur_continent_abr_UP = 'na'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_a = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+cur_continent = 'South America'
+cur_continent_abr = 'SA'
+cur_continent_abr_UP = 'sa'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_b = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+cur_continent = 'Africa'
+cur_continent_abr = 'AF'
+cur_continent_abr_UP = 'af'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_c = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+cur_continent = 'Asia'
+cur_continent_abr = 'AS'
+cur_continent_abr_UP = 'as'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_d = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+cur_continent = 'Australasia'
+cur_continent_abr = 'AU'
+cur_continent_abr_UP = 'au'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_e = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+cur_continent = 'Europe'
+cur_continent_abr = 'EU'
+cur_continent_abr_UP = 'eu'
+path2output= paste0(proj_dir, 'Upstream/', cur_continent, '/', cur_folder_name,'/')
+test_f = fread(paste0(path2output, 'upstream_', run_name, cur_continent_abr_UP, '_allWS_', 
+                                 dist_threshold, '.csv'))
+
+
+test_all = rbind(test_a, test_b, test_c, test_d, test_e, test_f)
+length(unique(test_all$Id)) == nrow(test_all)
+
+dupes = 
+  test_all %>%
+  group_by(Id) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+#fwrite(dupes, paste0(proj_dir, 'Upstream/', 'dupes.csv'))
 
 
 #writeRaster(out_fish_r, paste0(proj_dir, 'Upstream/test.tif'), , overwrite=TRUE)
