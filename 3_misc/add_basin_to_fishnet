@@ -1,0 +1,67 @@
+# Load required libraries
+machine = '' #WB_VDM
+source('0_environment/setEnvironment.R')
+
+#-------------------------
+# (a) Load and combine shapefiles with pattern
+#-------------------------
+base_dir <- "/Users/tejasvi/Dropbox/Database/Watersheds/HydroBASIN"
+pattern <- "lev04_v1c.shp$"   # e.g., "_subcatchment.shp"
+
+shp_files <- list.files(base_dir, pattern = pattern, recursive = TRUE, full.names = TRUE)
+
+# Read and bind all shapefiles into one
+all_polygons <- do.call(rbind, lapply(shp_files, st_read))
+
+# Save combined polygons to temp file for QGIS
+poly_path <- tempfile(fileext = ".gpkg")
+st_write(all_polygons, poly_path, delete_dsn = TRUE)
+
+#-------------------------
+# (b) Create centroids with QGIS
+#-------------------------
+
+centroids_path <- tempfile(fileext = ".gpkg")
+qgis_run_algorithm(
+  "native:centroids",
+  INPUT = fishnet,
+  ALL_PARTS = FALSE,
+  OUTPUT = centroids_path
+)
+
+#-------------------------
+# (c) Spatial join (centroids -> polygons) with QGIS
+#-------------------------
+centroids_joined_path <- tempfile(fileext = ".gpkg")
+
+qgis_run_algorithm(
+  "native:joinattributesbylocation",
+  INPUT = centroids_path,
+  JOIN = poly_path,
+  PREDICATE = 0,            # 0 = intersects (default, works for point-in-polygon)
+  JOIN_FIELDS = c("HYBAS_ID"),       # join all fields
+  METHOD = 0,               # take attributes of first matching polygon
+  DISCARD_NONMATCHING = FALSE,
+  OUTPUT = centroids_joined_path
+)
+
+# Load back the joined centroids
+centroids_joined <- st_read(centroids_joined_path)
+
+#-------------------------
+# (d) Add polygon attributes back to original input shapefile
+#-------------------------
+# Join polygon-attributes (from centroids) back to original polygons
+# Note: centroids_joined carries original attributes + poly_ attributes
+result <- 
+  fishnet %>%
+  dplyr::left_join(st_drop_geometry(centroids_joined[,c("OBJECTID", "HYBAS_ID")]),
+                   by = "OBJECTID") %>%
+  dplyr::rename(HYBAS_ID_04 = HYBAS_ID) %>%
+  dplyr::mutate(HYBAS_ID_04 = as.character(HYBAS_ID_04)) %>%
+  st_drop_geometry()
+
+
+
+# Save final result
+fwrite(result, "/Users/tejasvi/Dropbox/Database/Fishnet_halfdegree/fishnet_wHYBAS_lev04.csv")

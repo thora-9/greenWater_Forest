@@ -61,10 +61,10 @@ fishnet.r =
 
 wb_regions = 
   st_read(paste0(database, "Admin/WB_Regions/WB_countries_Admin0_10m_QGIS_fixed.gpkg")) %>%
-  filter(TYPE != 'Dependency') %>%
+  dplyr::filter(TYPE != 'Dependency') %>%
   dplyr::select(WB_NAME, ISO_A2, ISO_A3, ISO_N3, TYPE, REGION_WB) %>%
-  mutate(rownumber = row_number()) %>% #Need to create custom ID; otherwise some duplicates due to random colonial territories
-  mutate(ISO_N3 = as.numeric(ISO_N3))
+  dplyr::mutate(rownumber = dplyr::row_number()) %>% #Need to create custom ID; otherwise some duplicates due to random colonial territories
+  dplyr::mutate(ISO_N3 = as.numeric(ISO_N3))
 
 wb_regions_non_spatial = 
   wb_regions %>% st_drop_geometry() %>% as.data.table()

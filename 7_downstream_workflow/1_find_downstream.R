@@ -253,7 +253,7 @@ print(end - start)
 out_list_merged <- rbindlist(out_list)
 
 pathOut = paste0(proj_dir, 'Downstream/', cur_continent, '/', 'downstream_codes_' , cur_continent_abr, '_wdist.rds')
-saveRDS(downstream_DT, pathOut)
+saveRDS(out_list_merged, pathOut)
 
 # fwrite(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AU_wdist.csv'))
 # saveRDS(out_list_merged, paste0(proj_dir, 'Upstream/upstream_codes_AU_wdis.rds'))
